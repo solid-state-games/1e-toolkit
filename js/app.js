@@ -44,7 +44,12 @@ const Hub = (function () {
     const GM_TABS = [["enc", "Encounters"], ["tre", "Treasure"], ["com", "Combat"]];
 
     async function start() {
-        if (TK.role === "GM") players = (await TK.OBR.party.getPlayers()).filter(function (p) { return p.role === "PLAYER"; });
+        // Players can join after the panel opens (e.g. a player in another tab): keep the Assign list live.
+        const keepPlayers = function (ps) { players = (ps || []).filter(function (p) { return p.role === "PLAYER"; }); };
+        if (TK.role === "GM") {
+            keepPlayers(await TK.OBR.party.getPlayers());
+            TK.OBR.party.onChange(function (ps) { keepPlayers(ps); refreshItems(); });
+        }
         const sceneReady = await TK.OBR.scene.isReady();
         shell();
         if (sceneReady) await refreshItems(); else { $("sheets").innerHTML = '<p class="muted">Waiting for a scene to load.</p>'; }
@@ -95,7 +100,7 @@ const Hub = (function () {
             if (TK.role === "GM") {
                 line += '<button type="button" class="btn ghost" data-act="import">Import</button>';
                 if (has) line += '<button type="button" class="btn ghost" data-act="export">Export</button>';
-                line += '<select data-act="assign" title="Assign this token to a player"><option value="">Assign...</option><option value="-">Nobody</option>' + players.map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.name) + "</option>"; }).join("") + "</select>";
+                line += '<select data-act="assign" title="Assign this token to a player"><option value="">' + (players.length ? "Assign..." : "Assign (no players in the room yet)") + '</option><option value="-">Nobody</option>' + players.map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.name) + "</option>"; }).join("") + "</select>";
             }
             return line + "</div></li>";
         }).join("") + "</ul>";

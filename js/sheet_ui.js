@@ -49,7 +49,8 @@ const SheetUI = (function () {
         canSee = TK.role === "GM" || (owner ? owner === TK.me : it.createdUserId === TK.me);
         canWrite = canSee && (TK.role === "GM" || it.createdUserId === TK.me);
         if (!canWrite && (it.metadata || {})[SR.OWNER_KEY] === TK.me) { TK.OBR.player.hasPermission("CHARACTER_UPDATE").then(function (ok) { if (ok && !canWrite) { canWrite = true; paint(); } }); }
-        status = canWrite ? (stored ? "Saved in the token" : "New sheet: not saved yet") : "Read only: this token is not yours to edit";
+        status = canWrite ? (stored ? "Saved in the token" : "New sheet: saving...") : "Read only: this token is not yours to edit";
+        if (canWrite && !stored) { clearTimeout(saveTimer); saveTimer = setTimeout(save, 0); } // a new sheet is saved at once, not on first edit
     }
     function commit(rerender) {
         sheet = SR.sanitize(sheet); view = SR.compute(sheet); dirty = true;
@@ -65,7 +66,7 @@ const SheetUI = (function () {
         saving = true;
         try {
             await TK.OBR.scene.items.updateItems([tokenId], function (d) { d[0].metadata[SR.KEY] = packed; });
-            lastJson = JSON.stringify(packed); status = "Saved in the token";
+            lastJson = JSON.stringify(packed); status = "Saved in the token at " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
         } catch (e) { status = "NOT SAVED: " + e.message; say("Could not save the sheet: " + e.message, "ERROR"); }
         saving = false; dirty = false; updateMeter();
     }
@@ -104,6 +105,7 @@ const SheetUI = (function () {
         let h = '<div class="sheet"><div class="orn"></div>';
         h += '<header class="shead"><div><h1>1e Character Sheet</h1><p class="sub">AD&amp;D 1st Edition, rules as written</p></div><div class="sbtns">' +
             '<span class="vsw" role="group" aria-label="Sheet view"><button type="button" class="btn ' + (mode === "simple" ? "" : "ghost") + '" data-act="vw" data-v="simple" aria-pressed="' + (mode === "simple") + '">Simple</button><button type="button" class="btn ' + (mode === "full" ? "" : "ghost") + '" data-act="vw" data-v="full" aria-pressed="' + (mode === "full") + '">Full</button></span>' +
+            (canWrite ? '<button type="button" class="btn" data-act="savenow" title="Changes also save by themselves half a second after you stop typing">Save</button>' : "") +
             '<button type="button" class="btn ghost" data-act="export">Export JSON</button><button type="button" class="btn ghost" data-act="copyjson">Copy JSON</button>' +
             (canWrite ? '<button type="button" class="btn ghost" data-act="import">Import JSON</button>' : "") + '<button type="button" class="btn ghost themebtn" onclick="tkToggleTheme()">Light / Dark</button><button type="button" class="btn" data-act="close">Close</button></div></header>';
         if (!canWrite) h += '<div class="banner">Read only. You can look at this sheet, and export it. Saving needs the GM to hand you the token (Characters tab, Assign) or allow character updates for players in the room settings.</div>';
@@ -534,6 +536,7 @@ const SheetUI = (function () {
         if (act === "hn-edit") { drawer = i; drawerAnim = true; paint(); return; }
         if (act === "hn-close") { drawer = -1; paint(); return; }
         if (act === "close") { TK.OBR.modal.close(SR.NS + "/sheet"); return; }
+        if (act === "savenow") { clearTimeout(saveTimer); status = "Saving..."; updateMeter(); save(); return; }
         if (act === "export") { exportFile(); return; }
         if (act === "copyjson") { copyText(exportJson(), b); return; }
         if (act === "import") { const f = $("importFile"); f.value = ""; f.onchange = onImport; f.click(); return; }
