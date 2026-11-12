@@ -139,3 +139,20 @@ ul.spchips{list-style:none;display:flex;flex-wrap:wrap;gap:.3em;margin:0;padding
 @media(max-width:700px){.sabs{grid-template-columns:repeat(2,1fr)}.sstats{flex-wrap:wrap}.sprow{flex-direction:column;gap:.2em}}
 
 .loydetail{border-top:2px solid var(--line);margin-top:.5em;padding-top:.3em}.loytable td:nth-child(4){text-align:left;font-size:12px}
+
+/* text size (zoom keeps every proportion) and spacing, chosen per browser */
+:root[data-size="s"] body{zoom:.85}:root[data-size="l"] body{zoom:1.15}
+.viewsel{font-size:11px;text-transform:uppercase;letter-spacing:.05em;border:1px solid var(--line);padding:.15em .2em;margin-left:.3em}
+:root[data-density="compact"] body{line-height:1.2}
+:root[data-density="compact"] .sheet{padding:.3em .6em .5em}
+:root[data-density="compact"] .box{margin:.5em 0;padding:.15em .4em .3em}
+:root[data-density="compact"] .page{padding:.3em .4em .1em;min-height:0}
+:root[data-density="compact"] .ident,:root[data-density="compact"] .shead{margin:.15em 0;padding:.15em 0}
+:root[data-density="compact"] .fld{margin:0}
+:root[data-density="compact"] table.grid th,:root[data-density="compact"] table.grid td{padding:.05em .3em}
+:root[data-density="compact"] .cell{padding:0 .2em}:root[data-density="compact"] .arow{padding:.15em 0}
+:root[data-density="compact"] .btn{padding:.15em .55em}
+:root[data-density="comfortable"] body{line-height:1.5}
+:root[data-density="comfortable"] .box{margin:1em 0;padding:.5em .8em .7em}
+:root[data-density="comfortable"] table.grid th,:root[data-density="comfortable"] table.grid td{padding:.3em .55em}
+:root[data-density="comfortable"] .cell{padding:.25em .4em}

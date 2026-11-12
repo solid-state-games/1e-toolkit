@@ -59,7 +59,7 @@ const Hub = (function () {
     }
     function shell() {
         const tabs = [["sheets", "Characters"]].concat(TK.role === "GM" ? GM_TABS : []).concat([["guide", "Guide"]]);
-        let h = '<header class="hubhead"><h1>1e Character Sheet</h1><span><span class="rolebadge">' + (TK.role === "GM" ? "GM" : "Player") + '</span><button type="button" class="btn ghost small themebtn" onclick="tkToggleTheme()">Light / Dark</button></span></header>';
+        let h = '<header class="hubhead"><h1>1e Character Sheet</h1><span><span class="rolebadge">' + (TK.role === "GM" ? "GM" : "Player") + '</span>' + tkViewControls() + '<button type="button" class="btn ghost small themebtn" onclick="tkToggleTheme()">Light / Dark</button></span></header>';
         h += '<nav class="tabs" role="tablist">' + tabs.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '">' + t[1] + "</button>"; }).join("") + "</nav>";
         h += '<section id="sheets" class="pane"></section>';
         if (TK.role === "GM") h += '<section id="enc" class="pane"></section><section id="tre" class="pane"></section><section id="com" class="pane"></section>';
@@ -339,4 +339,17 @@ function tkToggleTheme() {
     const r = document.documentElement, dark = r.dataset.theme ? r.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
     r.dataset.theme = dark ? "light" : "dark";
     try { localStorage.setItem("tk-theme", r.dataset.theme); } catch (e) {}
+}
+
+/* text size and spacing (like Gmail's density setting): per browser, applied to <html> */
+function tkSetView(kind, v) {
+    const r = document.documentElement;
+    if (v === "m" || v === "default") delete r.dataset[kind]; else r.dataset[kind] = v;
+    try { localStorage.setItem("tk-" + kind, v); } catch (e) {}
+}
+function tkViewControls() {
+    const r = document.documentElement, z = r.dataset.size || "m", d = r.dataset.density || "default";
+    const opt = function (v, l, cur) { return '<option value="' + v + '"' + (v === cur ? " selected" : "") + ">" + l + "</option>"; };
+    return '<select class="viewsel" title="Text size" onchange="tkSetView(\'size\', this.value)">' + opt("s", "Text S", z) + opt("m", "Text M", z) + opt("l", "Text L", z) + "</select>" +
+        '<select class="viewsel" title="Spacing" onchange="tkSetView(\'density\', this.value)">' + opt("compact", "Compact", d) + opt("default", "Default", d) + opt("comfortable", "Comfortable", d) + "</select>";
 }
