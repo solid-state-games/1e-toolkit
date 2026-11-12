@@ -10,7 +10,10 @@ const SheetUI = (function () {
     // screen-only state (never stored): pending confirmation, loyalty situation counts and results, tokens in the scene, open loyalty panels, last payment note
     let pending = null, loySit = [], loyRes = {}, loyChk = 0, loyOpen = {}, loyRow = -1, toks = [], toksJson = "", payLoc = 0, payNote = "", rsub = 0, drawer = -1, drawerAnim = false, rulesOpen = {};
     // creating a character (screen-only): null, or {phase: choose|wizard|random, ok: replace confirmed}. cre = Random PC choices and the rolled preview.
-    let creating = null, cre = { band: "1", method: "1", sheet: null, line: "", err: "" };
+    let creating = null, cre = { band: "1", method: "1", appP: false, sheet: null, line: "", err: "" };
+    const CRE_KEY = "tk-random-pc"; // the last Random PC choices, kept per browser
+    try { const k = JSON.parse(localStorage.getItem(CRE_KEY) || "null"); if (k && typeof k === "object") { if (/^\d+(-\d+)?$/.test(k.band)) cre.band = k.band; if (/^[1-4]$/.test(String(k.method))) cre.method = String(k.method); cre.appP = k.appP === true; } } catch (e) { /* private mode or bad data: defaults */ }
+    function saveCre() { try { localStorage.setItem(CRE_KEY, JSON.stringify({ band: cre.band, method: cre.method, appP: cre.appP })); } catch (e) { /* ignore */ } }
 
     /* ---------- boot, load, save ---------- */
     async function start(id) {
@@ -97,6 +100,28 @@ const SheetUI = (function () {
     const nf = new Intl.NumberFormat("en-AU", { maximumFractionDigits: 2 });
     function chips(list, act, extra) { return '<ul class="chips">' + list.map(function (t, i) { return "<li>" + esc(t) + (canWrite ? ' <button type="button" class="x" data-act="' + act + '" data-i="' + i + '"' + (extra || "") + ' title="Remove">&times;</button>' : "") + "</li>"; }).join("") + "</ul>"; }
 
+    /* ---------- armour class build-up and saving throws with worn magic items ---------- */
+    function saveCell(k) { const t = view.saves[k]; return t.eff === t.base ? String(t.base) : "<b title=\"Table figure " + t.base + ", lowered by " + view.ac.save + " for worn magic items (a bonus on the die)\">" + t.eff + "</b> <small class=\"muted\">(" + t.base + ")</small>"; }
+    function saveNote() {
+        const a = view.ac; let h = "";
+        if (a.save) h += '<p class="note">Worn magic items give +' + a.save + " on saving throws: " + a.saveRows.map(function (r) { return esc(r.label) + " +" + r.n + " (" + r.p + ")"; }).join(", ") + ". The table figure is lowered by " + a.save + "; the printed figure is in brackets.</p>";
+        if (a.armourSave.length) h += '<p class="hint">' + a.armourSave.map(function (r) { return esc(r.label); }).join(" and ") + ": magic armour adds to saves against acid (not immersion), disintegration, falling, fire and spells that cause physical damage, never against gas, poison or spells that do not (DMG p.81; the bonus is the plus, as DMG p.154 and p.158 use it). Not added to the table.</p>";
+        return h;
+    }
+    function acBox() {
+        const a = view.ac;
+        let h = '<table class="grid acbuild"><tr><th>Armour class build-up</th><th>Change</th><th>Rule</th></tr>' + a.rows.map(function (r) {
+            return "<tr><td>" + esc(r.label) + "</td><td>" + (r.d ? sg(r.d) : "0") + "</td><td>" + esc(r.p) + "</td></tr>";
+        }).join("") + '<tr class="tot"><th>Armour class (10 before anything, lower is better)</th><th id="actotal">' + a.total + "</th><th></th></tr></table>";
+        if (a.vsMissiles !== null) h += '<p class="note">Against hand hurled and mechanically propelled missiles: AC ' + a.vsMissiles + " (shield, large, +1, +4 versus missiles, DMG p.165).</p>";
+        a.warns.forEach(function (w) { h += '<p class="note">' + esc(w) + "</p>"; });
+        if (a.skipped.length) h += '<ul class="acskip">' + a.skipped.map(function (x) { return "<li><b>" + esc(x.label) + "</b>: " + esc(x.why) + " (" + esc(x.p) + ").</li>"; }).join("") + "</ul>";
+        if (a.save) h += '<p class="hint">Saving throw bonus from worn items: +' + a.save + " (see page 1, saving throws).</p>";
+        if (canWrite && SR.wearables(sheet).length) h += '<div class="addrow"><button type="button" class="btn ghost small" data-act="wear-best" title="Marks worn whichever armour, shield and magic items give the lowest armour class, then the best saves">Wear the best set</button><span class="muted small">Tick what you wear on the Equipment page (carried items only).</span></div>';
+        h += '<p class="hint">Rules as the DMG prints them: armour and shields PHB p.36, DMG p.28, p.124, p.164-165; rings p.129-130; bracers p.139; cloaks p.140-141; other items p.134, p.139, p.145, p.147. Magic armour not listed (relics, artifacts, potions) is not worked out; use the combat adjustments.</p>';
+        return h;
+    }
+
     /* ---------- paint ---------- */
     function paint() {
         if (!canSee) {
@@ -126,13 +151,13 @@ const SheetUI = (function () {
     /* ---------- making a character: Blank / Wizard / Random PC ---------- */
     const hadSheet = function () { return lastJson !== "null"; };
     const METHODS = [["1", "I: 4d6, drop the lowest, arrange"], ["2", "II: best six of twelve 3d6"], ["3", "III: best of six 3d6 for each"], ["4", "IV: best of twelve characters"]];
-    const BANDS = [["1", "Level 1"], ["2-4", "Levels 2 to 4"], ["5-8", "Levels 5 to 8"], ["9-12", "Levels 9 to 12"]];
+    const BANDS = [["1", "Level 1"], ["1-2", "Levels 1 to 2 (low)"], ["1-3", "Levels 1 to 3 (low)"], ["2-4", "Levels 2 to 4 (low)"], ["5-7", "Levels 5 to 7 (medium)"], ["5-8", "Levels 5 to 8 (medium)"], ["7-9", "Levels 7 to 9 (medium)"],
+        ["8-10", "Levels 8 to 10 (upper)"], ["8-11", "Levels 8 to 11 (upper)"], ["9-12", "Levels 9 to 12 (upper)"]];
     function rollRandom() {
         cre.err = "";
         try {
-            const b = cre.band.split("-").map(Number), lvl = b.length > 1 ? QPRules.rr(b[0], b[1]) : b[0];
-            const rec = QPRules.genPCParty({ count: 1, levelRange: lvl, method: Number(cre.method), alignMode: "any" }).chars[0];
-            cre.sheet = SR.fromQuickParty(rec, item.name || ""); cre.line = SR.previewLine(cre.sheet);
+            const r = SR.randomPC({ band: cre.band, method: Number(cre.method), appP: cre.appP, name: item.name || "" });
+            cre.sheet = r.sheet; cre.line = r.line;
         } catch (e) { cre.sheet = null; cre.err = "Could not roll a character: " + e.message; }
     }
     function themeName() { const r = document.documentElement; return r.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); }
@@ -152,9 +177,12 @@ const SheetUI = (function () {
                 '<iframe id="wizframe" class="wizframe" title="1e Character Creator" src="wizard/index.html?embed=1&theme=' + themeName() + '"></iframe>';
         } else if (c.phase === "random") {
             const o = function (list, cur) { return list.map(function (x) { return '<option value="' + x[0] + '"' + (x[0] === cur ? " selected" : "") + ">" + esc(x[1]) + "</option>"; }).join(""); };
-            h += '<section class="box"><h3>Random PC</h3><div class="mkbar"><label>Level <select data-cre="band">' + o(BANDS, cre.band) + '</select></label><label>Ability method (DMG p.11) <select data-cre="method">' + o(METHODS, cre.method) + "</select></label></div>" +
+            h += '<section class="box"><h3>Random PC</h3><div class="mkbar"><label>Level <select data-cre="band">' + o(BANDS, cre.band) + '</select></label>' +
+                '<label>Ability method (DMG p.11) <select data-cre="method"' + (cre.appP ? " disabled" : "") + ' title="' + (cre.appP ? "Appendix P rolls 4d6, drops the lowest and arranges the scores: Method I" : "DMG p.11 Methods I to IV") + '">' + o(METHODS, cre.appP ? "1" : cre.method) + "</select></label>" +
+                '<label class="chk" title="DMG Appendix P, p.225-227: abilities 4d6 drop the lowest and arranged, a level range, race and class chosen after the abilities, standard equipment, then magic items by class and level (protective items, scrolls, weapons, potions) and up to four miscellaneous items above 5th level"><input type="checkbox" data-cre="appP"' + (cre.appP ? " checked" : "") + '> PC on the spot (DMG Appendix P)</label></div>' +
                 '<p class="preview" id="rpreview">' + (cre.sheet ? esc(cre.line) : "") + '</p><div class="mkbar"><button type="button" class="btn ghost" data-act="mk-reroll">Re-roll</button><button type="button" class="btn" data-act="mk-use"' + (cre.sheet ? "" : " disabled") + '>Use this character</button><button type="button" class="btn ghost" data-act="mk-back">Back</button></div>' +
-                '<p class="hint">Made from the Quick Party tables (PHB p.9-37, DMG p.11, Appendix P). Spells, gear and magic items come with it; check the Notes page afterwards.</p></section>';
+                '<p class="hint">' + (cre.appP ? "PC on the spot: abilities, level, standard kit and magic items as DMG Appendix P (p.225-227), made by the Quick Party tables. Armour class is worked out from what the character wears." : "Abilities by the chosen method, a level in the range, the standard kit and spells for the class, no magic items. Tick the Appendix P box for magic items.") +
+                ' Race and class are chosen from what the scores allow (PHB p.14-33). Check the Notes page afterwards.</p></section>';
         }
         h += '<div class="orn"></div><footer class="sfoot"><div class="credit">' + esc(CREDIT) + "</div></footer></div>";
         root.innerHTML = h; window.scrollTo(0, 0);
@@ -240,7 +268,8 @@ const SheetUI = (function () {
         let h = box("Abilities", '<p class="hint">Scores are final scores (after race and age). Races: ' + esc(s.race) + " (" + Object.keys(R.ABILITY_NAMES).map(function (a) { return R.ABILITY_NAMES[a].slice(0, 3) + " " + rc.min[a][s.sex === "f" ? 1 : 0] + "-" + rc.max[a][s.sex === "f" ? 1 : 0]; }).join(", ") + ", PHB p.15 Table III).</p>" + rows);
         // saves
         const sv = d.saves, names = [["death", "Paralysis, poison or death magic"], ["petrification", "Petrification or polymorph"], ["wand", "Rod, staff or wand"], ["breath", "Breath weapon"], ["spell", "Spell"]];
-        let sh = '<table class="grid saves"><tr>' + names.map(function (n) { return "<th>" + n[1] + "</th>"; }).join("") + "</tr><tr>" + names.map(function (n) { return "<td>" + sv[n[0]] + "</td>"; }).join("") + "</tr></table>";
+        let sh = '<table class="grid saves"><tr>' + names.map(function (n) { return "<th>" + n[1] + "</th>"; }).join("") + "</tr><tr>" + names.map(function (n) { return "<td>" + saveCell(n[0]) + "</td>"; }).join("") + "</tr></table>";
+        sh += saveNote();
         sh += '<p class="hint">' + esc(sv.rule) + " Saving throw tables: DMG p.79.</p>" + sv.notes.map(function (n) { return '<p class="note">' + esc(n) + "</p>"; }).join("");
         sh += condRows("sj", "Saving throw adjustments");
         // movement
@@ -288,6 +317,7 @@ const SheetUI = (function () {
             "<tr><th>Melee</th>" + acs.map(function (a) { return "<td>" + view.toHitRows.melee[a] + "</td>"; }).join("") + "</tr>" +
             "<tr><th>Missile</th>" + acs.map(function (a) { return "<td>" + view.toHitRows.missile[a] + "</td>"; }).join("") + "</tr></table></div>";
         th += '<p class="hint">Number needed on d20 (equal or higher hits). Class and level from the attack matrix (DMG p.74-75); melee includes Strength hit adj ' + sg(A.str.hit) + ', missile includes Dexterity ' + sg(A.dex.reaction) + '. Attacks per round: ' + esc(view.attacksPerRound) + ' (PHB p.25).</p>';
+        h = box("Armour class", acBox()) + h;
         h += box("To hit by armour class", th);
         h += box("Combat adjustments", condRows("cj", "Condition adjustments (to hit and damage)") + '<p class="hint">Racial bonuses to hit (for example elves with bows and swords) are listed on page 1 under vision and resistances, and are not added to the table above.</p>');
         // weapons table
@@ -343,6 +373,13 @@ const SheetUI = (function () {
         if (!pending) return "";
         return '<div class="banner confirm" id="confirm">' + esc(pending.msg) + ' <button type="button" class="btn small" data-act="yes">' + esc(pending.yes || "Yes") + '</button> <button type="button" class="btn ghost small" data-act="no">Cancel</button></div>';
     }
+    function wornCell(i, loc) {
+        const w = loc ? null : SR.wearState(sheet.inv[i]); if (!w) return "";
+        const tip = esc(w.info.tip), nm = esc(w.info.name);
+        let h = '<label class="wornbox" title="' + tip + '"><input type="checkbox" data-act="wear" data-i="' + i + '" aria-label="Worn: ' + nm + '"' + (w.worn ? " checked" : "") + (canWrite ? "" : " disabled") + "></label>";
+        if (w.info.kind === "defender" && w.worn) { h += ' <select data-act="held" data-i="' + i + '" title="' + tip + '"' + (canWrite ? "" : " disabled") + ">"; for (let k = 0; k <= w.info.max; k++) h += '<option value="' + k + '"' + (k === w.held ? " selected" : "") + ">" + k + " held for AC</option>"; h += "</select>"; }
+        return h;
+    }
     function pgGear() {
         const s = sheet, m = view.movement, places = s.lp, LIM = SR.LIM;
         let h = pendingBar();
@@ -360,15 +397,15 @@ const SheetUI = (function () {
         h += box("Places", pl);
         // equipment grouped by location
         const where = ["Carried"].concat(places.map(function (p) { return p[0]; }));
-        let g = '<div class="scroll"><table class="grid gear"><tr><th>Item</th><th>Qty</th><th>Each (lb)</th><th>Total (lb)</th><th>AC</th><th>Move to</th><th></th></tr>';
+        let g = '<div class="scroll"><table class="grid gear"><tr><th>Item</th><th>Qty</th><th>Each (lb)</th><th>Total (lb)</th><th>AC</th><th>Worn</th><th>Move to</th><th></th></tr>';
         where.forEach(function (name, loc) {
             const rows = []; s.inv.forEach(function (e, i) { if (SR.locOf(e) === loc) rows.push(i); });
-            g += '<tr class="grp"><th colspan="7">' + esc(name) + (loc ? " (left here: not counted for load, movement or armour class)" : " (counts for load, movement and armour class)") + "</th></tr>";
-            if (!rows.length) g += '<tr><td colspan="7" class="muted">' + (loc ? "Nothing left here." : "Nothing carried.") + "</td></tr>";
+            g += '<tr class="grp"><th colspan="8">' + esc(name) + (loc ? " (left here: not counted for load, movement or armour class, never worn)" : " (counts for load and movement; tick Worn for what you wear)") + "</th></tr>";
+            if (!rows.length) g += '<tr><td colspan="8" class="muted">' + (loc ? "Nothing left here." : "Nothing carried.") + "</td></tr>";
             rows.forEach(function (i) {
                 const e = s.inv[i], o = SR.hydrateRow(e), nm = SR.entryParts(e).core[0];
                 const mv = canWrite ? '<select data-act="mv" data-i="' + i + '" title="Move this item to another place"><option value="-1">Move to...</option>' + where.map(function (w, k) { return k === loc ? "" : '<option value="' + k + '">' + esc(w) + "</option>"; }).join("") + '</select> <input class="tiny" id="mvq-' + i + '" type="number" min="1" placeholder="all" title="How many to move (blank = all)">' : "";
-                g += '<tr class="' + (loc ? "away" : "") + '"><td>' + esc(nm) + "</td><td>" + inp("inv." + i + ".1", { t: "n", min: 1, max: 9999, cls: "tiny" }) + "</td><td>" + nf.format(o.w || 0) + "</td><td>" + nf.format((o.w || 0) * e[1]) + "</td><td>" + (o.ac !== undefined && o.ac !== null ? o.ac : "") + "</td><td>" + mv + "</td><td>" + (canWrite ? '<button type="button" class="x" data-act="gear-rm" data-i="' + i + '">&times;</button>' : "") + "</td></tr>";
+                g += '<tr class="' + (loc ? "away" : "") + '"><td>' + esc(nm) + "</td><td>" + inp("inv." + i + ".1", { t: "n", min: 1, max: 9999, cls: "tiny" }) + "</td><td>" + nf.format(o.w || 0) + "</td><td>" + nf.format((o.w || 0) * e[1]) + "</td><td>" + (o.ac !== undefined && o.ac !== null ? o.ac : "") + "</td><td>" + wornCell(i, loc) + "</td><td>" + mv + "</td><td>" + (canWrite ? '<button type="button" class="x" data-act="gear-rm" data-i="' + i + '">&times;</button>' : "") + "</td></tr>";
             });
         });
         g += "</table></div>";
@@ -377,9 +414,11 @@ const SheetUI = (function () {
             const E = R.EQUIPMENT;
             g += '<div class="addrow"><select id="gear-sel"><option value="">Add to Carried from the price lists...</option>' + grp("Armour and shields", E.armor) + grp("Weapons", E.weapons) + grp("Equipment", E.gear) + grp("Animals", E.beasts) + '</select>' +
                 '<input id="gear-qty" type="number" min="1" value="1" class="tiny"><button type="button" class="btn" data-act="gear-add">Add</button></div>';
+            const mg = {}; SR.MAGIC_AC_PICK.forEach(function (m) { (mg[m[0]] = mg[m[0]] || []).push(m); });
+            g += '<div class="addrow"><select id="mg-sel"><option value="">Add a magic item that changes armour class...</option>' + Object.keys(mg).map(function (k) { return '<optgroup label="' + esc(k) + '">' + mg[k].map(function (m) { return '<option value="' + esc(m[1]) + '" data-w="' + m[2] + '">' + esc(m[1]) + "</option>"; }).join("") + "</optgroup>"; }).join("") + '</select><button type="button" class="btn" data-act="mg-add">Add</button></div>';
             g += '<div class="addrow"><input id="cg-n" placeholder="Other item (a magic item, a gem pouch...)" maxlength="60"><input id="cg-w" type="number" step="0.1" min="0" placeholder="lb each" class="tiny"><input id="cg-ac" type="number" min="-10" max="10" placeholder="AC" class="tiny"><button type="button" class="btn" data-act="gear-custom">Add other</button></div>';
         }
-        g += '<p class="hint">Weights DMG p.225 and PHB p.35-37; armour values PHB p.36. Armour worn sets your armour class and caps movement. Entries marked estimated in rules_1e.js have no printed weight in the books. Magic bonuses on armour and shields are not worked out: put them in the combat adjustments.</p>';
+        g += '<p class="hint">Weights DMG p.225 and PHB p.35-37; armour values PHB p.36. Tick Worn for what you have on: ordinary armour and shields start ticked, magic items start unticked (hover a tick for the rule and page). Worn armour sets armour class and caps movement. Magic armour, shields, rings of protection, bracers of defense, cloaks and the other items on the picker are worked out on the Combat page (DMG p.124-169). Entries marked estimated in rules_1e.js have no printed weight in the books.</p>';
         h += box("Equipment", g);
         // encumbrance live
         const bar = Math.min(100, Math.round(m.gp / (m.bands[3].upTo) * 100));
@@ -565,7 +604,7 @@ const SheetUI = (function () {
     /* ---------- events ---------- */
     function onChange(e) {
         const el = e.target;
-        if (el.dataset.cre && creating) { cre[el.dataset.cre] = el.value; rollRandom(); paint(); return; }
+        if (el.dataset.cre && creating) { cre[el.dataset.cre] = el.type === "checkbox" ? el.checked : el.value; saveCre(); rollRandom(); paint(); return; }
         if (el.dataset.f && canWrite) {
             const t = el.dataset.t; let v = el.value;
             if (t === "n") { v = Number(v); if (isNaN(v)) v = 0; }
@@ -577,6 +616,8 @@ const SheetUI = (function () {
         if (a === "mv" && canWrite) {
             const to = Number(el.value); if (to >= 0) { const q = $("mvq-" + hi); SR.moveItem(sheet, hi, to, q && q.value ? Number(q.value) : 0); setTimeout(function () { commit(true); }, 0); }
         }
+        if (a === "wear" && canWrite) { SR.setWorn(sheet, hi, el.checked, 0); setTimeout(function () { commit(true); }, 0); }
+        if (a === "held" && canWrite) { SR.setWorn(sheet, hi, true, Number(el.value)); setTimeout(function () { commit(true); }, 0); }
         if (a === "hn-sit" && isGM()) { loySit[hk] = el.type === "checkbox" ? (el.checked ? 1 : 0) : Math.max(0, Math.floor(Number(el.value)) || 0); loyRes = {}; paint(); }
         if (a === "loy-sit" && isGM()) { loyChk = Number(el.value); }
         if (a === "payloc") { payLoc = Number(el.value); }
@@ -617,6 +658,8 @@ const SheetUI = (function () {
         else if (act === "inj-rm") { sheet.ij.splice(i, 1); commit(true); }
         else if (act === "gear-add") { const v = idv("gear-sel"), q = Math.max(1, parseInt(idv("gear-qty"), 10) || 1); if (v) { const ex = sheet.inv.filter(function (r) { return r[0] === v && r.length === 2; })[0]; if (ex) ex[1] += q; else sheet.inv.push([v, q]); commit(true); } }
         else if (act === "gear-custom") { const n = idv("cg-n"); if (n) { const w = parseFloat(idv("cg-w")) || 0, ac = idv("cg-ac"); const row = [n, 1, w]; if (ac !== "") row.push(parseInt(ac, 10)); sheet.inv.push(row); commit(true); } }
+        else if (act === "mg-add") { const sel = $("mg-sel"), v = sel ? sel.value : ""; if (v) { const o = sel.options[sel.selectedIndex]; sheet.inv.push([v, 1, parseFloat(o.dataset.w) || 0]); commit(true); } }
+        else if (act === "wear-best") { SR.bestWear(sheet); commit(true); }
         else if (act === "gear-rm") { sheet.inv.splice(i, 1); commit(true); }
         else if (act === "pl-add") { const n = idv("pl-new"); if (n && sheet.lp.length < SR.LIM.places) { sheet.lp.push([n, 0, 0, 0, 0, 0]); commit(true); } }
         else if (act === "pl-rm") {

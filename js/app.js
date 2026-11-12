@@ -339,6 +339,9 @@ function tkToggleTheme() {
     const r = document.documentElement, dark = r.dataset.theme ? r.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
     r.dataset.theme = dark ? "light" : "dark";
     try { localStorage.setItem("tk-theme", r.dataset.theme); } catch (e) {}
+    // tell the wizard iframe (when the Create screen is showing it) so it follows the sheet
+    const f = document.getElementById("wizframe");
+    if (f && f.contentWindow) { try { f.contentWindow.postMessage({ type: "1e-theme", theme: r.dataset.theme }, location.origin); } catch (e) { /* ignore */ } }
 }
 
 /* text size and spacing (like Gmail's density setting): per browser, applied to <html> */

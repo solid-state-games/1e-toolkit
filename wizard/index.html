@@ -166,6 +166,44 @@
     /* embed mode (?embed=1, used inside the Owlbear sheet): no history, save, load or restart chrome */
     html.embed .no-embed { display: none !important; }
     html.embed { --font: 'Jost', sans-serif; --highlight: var(--fg); }
+    /* embed look (?embed=1 only): the Owlbear sheet's style. Black and white, Jost, thin rules, no shadows; better and worse are weight and italics, not colour.
+       Light and dark follow the sheet (?theme= at load, then {type:'1e-theme', theme} messages from the parent). Standalone never reads this block. */
+    html.embed { --bg:#fff; --fg:#000; --accent:#e4e4e4; --muted:#555; --soft:#f3f3f3; --danger:var(--fg); --success:var(--fg); --highlight:var(--fg); }
+    html.embed[data-theme="dark"] { --bg:#0e0e0e; --fg:#f0f0f0; --accent:#2c2c2c; --muted:#a8a8a8; --soft:#1a1a1a; }
+    html.embed body { padding: .6em; font-size: 15px; line-height: 1.35; font-variant-numeric: tabular-nums; }
+    html.embed h1, html.embed h2, html.embed h3, html.embed h4 { font-weight: 600; letter-spacing: .06em; margin-bottom: .3em; }
+    html.embed h1 { font-size: 20px; letter-spacing: .08em; }
+    html.embed h2 { font-size: 18px; } html.embed h4 { font-size: 13px; letter-spacing: .1em; }
+    html.embed header { border-bottom: 2px solid var(--fg); padding-bottom: .3em; margin-bottom: .6em; }
+    html.embed header small { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+    html.embed button, html.embed .btn { box-shadow: none; border: 1px solid var(--fg); border-radius: 0; padding: .3em .8em; margin: 2px; min-height: 0; font-weight: 500; font-size: 13px; letter-spacing: .06em; transition: none; }
+    html.embed button:active:not(:disabled) { transform: none; box-shadow: none; }
+    html.embed button:disabled { transform: none; opacity: .45; }
+    html.embed input, html.embed select { box-shadow: none; border: 0; border-bottom: 1px solid var(--fg); background: transparent; border-radius: 0; padding: .15em .3em; margin: 0; min-height: 0; font-weight: 400; font-size: 14px; }
+    html.embed input:focus, html.embed select:focus { outline: 2px solid var(--fg); outline-offset: 1px; background: transparent; }
+    html.embed input[type=checkbox], html.embed input[type=radio] { width: auto; accent-color: var(--fg); }
+    html.embed select option { background: var(--bg); color: var(--fg); }
+    html.embed .box { border: 1px solid var(--fg); box-shadow: none; padding: .3em .6em .5em; margin: .9em 0 .6em; position: relative; }
+    html.embed #wizard-view.box { padding: .6em .8em; margin-top: .3em; }
+    html.embed .box > h3:first-child, html.embed .box > h4:first-child { position: absolute; top: -.75em; left: .6em; background: var(--bg); padding: 0 .5em; margin: 0; }
+    html.embed .box > h3:first-child + *, html.embed .box > h4:first-child + * { margin-top: .5em; }
+    html.embed .stat-box { border: 1px solid var(--fg); padding: .3em; }
+    html.embed .stat-box label, html.embed label { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; }
+    html.embed table { margin-bottom: .5em; font-size: 13px; }
+    html.embed th, html.embed td { border: 1px solid var(--fg); padding: .15em .4em; }
+    html.embed th { background: var(--soft); color: var(--fg); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+    html.embed .shop-list { border: 1px solid var(--fg); }
+    html.embed .wizard-nav { border-top: 2px solid var(--fg); padding-top: .6em; margin-top: .8em; }
+    html.embed .tabs { border-bottom: 1px solid var(--fg); gap: 0; padding-bottom: 0; }
+    html.embed .tab { border: 1px solid var(--fg); opacity: 1; margin-right: -1px; transform: none; box-shadow: none; padding: .3em .8em; }
+    html.embed .tab.active { transform: none; box-shadow: none; }
+    html.embed .shop-sidebar .tab { margin-right: 0; margin-bottom: -1px; }
+    html.embed .modal-content { border: 2px solid var(--fg); box-shadow: none; }
+    html.embed .history-item { border: 1px solid var(--fg); }
+    html.embed .name-input { border-width: 0 0 1px 0; font-weight: 500; }
+    html.embed .roll-result { font-weight: 700; }
+    html.embed .roll-positive { font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+    html.embed .roll-negative { font-style: italic; font-weight: 400; }
 </style>
 </head>
 <body>
@@ -177,7 +215,7 @@
     </div>
     <div class="header-actions">
         <button class="no-embed" onclick="app.openHistory()" title="History"><i class="fas fa-history"></i></button>
-        <button onclick="app.toggleTheme()" title="Toggle Theme"><i class="fas fa-moon"></i></button>
+        <button class="no-embed" onclick="app.toggleTheme()" title="Toggle Theme"><i class="fas fa-moon"></i></button>
         <button class="no-embed" onclick="app.resetData()" title="Reset All Data"><i class="fas fa-trash"></i></button>
     </div>
 </header>
@@ -199,6 +237,8 @@ const VERSION = '1.9.0';
 const EMBED = /[?&]embed=1(&|$)/.test(location.search);
 const EMBED_THEME = (/[?&]theme=(dark|light)(&|$)/.exec(location.search) || [])[1];
 if (EMBED) document.documentElement.classList.add('embed');
+// Embedded: follow the sheet's light/dark. The parent posts {type:'1e-theme', theme:'dark'|'light'} (same origin only) whenever it changes.
+if (EMBED) window.addEventListener('message', e => { const d = e.data; if (e.origin !== location.origin || e.source !== window.parent || !d || d.type !== '1e-theme' || (d.theme !== 'dark' && d.theme !== 'light')) return; if (typeof STATE !== 'undefined') STATE.theme = d.theme; document.documentElement.dataset.theme = d.theme; });
 if (EMBED) { const jl = document.createElement('link'); jl.rel = 'stylesheet'; jl.href = 'https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&display=swap'; document.head.appendChild(jl); }
 const CONFIG = { DB_NAME: 'ADND1e_CharGen', DB_VER: 1, STORE_NAME: 'char_state' };
 const TOTAL_STEPS = 15;
@@ -529,7 +569,7 @@ function renderStep9() {
     const D = derived(), A = D.abilities, B = Rules.derive({ race: 'Human', sex: 'm', classes: ['Magic-User'], scores: { str: 10, int: 10, wis: 10, dex: 10, con: 10, cha: 10 } }).abilities;
     const cleric = hasClass('Cleric') || hasClass('Druid');
     let html = `<h2>Step 9: Ability Score Modifiers</h2>
-    <p>Bonuses and penalties from your final scores. Highlights show improvements (<span class="roll-positive">orange</span>) or penalties (<span class="roll-negative">red</span>) against a score of 10.</p>
+    <p>Bonuses and penalties from your final scores. Highlights show improvements (<span class="roll-positive">${EMBED ? 'bold, underlined' : 'orange'}</span>) or penalties (<span class="roll-negative">${EMBED ? 'italic' : 'red'}</span>) against a score of 10.</p>
     <div class="grid grid-2">
         <div class="box"><h4>Strength (${strLabel()})</h4>
             <p>Hit: ${fNum(A.str.hit, B.str.hit)}<br>Damage: ${fNum(A.str.dmg, B.str.dmg)}<br>Weight Allowance: ${fNum(A.str.wgt, B.str.wgt)} g.p.<br>Open Doors: ${A.str.openDoors}<br>Bend Bars/Lift Gates: ${fPct(A.str.bars, B.str.bars)}

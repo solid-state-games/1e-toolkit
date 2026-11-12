@@ -199,3 +199,10 @@ ul.spchips{list-style:none;display:flex;flex-wrap:wrap;gap:.3em;margin:0;padding
 .sheet:has(.dense) .sfoot .meter{flex:0 0 auto;font-size:11px}.sheet:has(.dense) .sfoot .credit{font-size:9.5px;margin:0;text-align:right}
 .sheet:has(.dense) .shead{margin:.1em 0;padding:0}
 .dense .gearline{margin:.15em 0}
+
+/* ---------- worn marks, armour class build-up, Random PC switch (2026-11-12) ---------- */
+.wornbox{display:inline-flex;align-items:center;cursor:pointer}.wornbox input{width:1.1em;height:1.1em;accent-color:var(--fg);cursor:pointer}
+table.acbuild{min-width:60%}table.acbuild td:nth-child(2),table.acbuild th:nth-child(2){text-align:center;width:5em}table.acbuild td:nth-child(3){text-align:left;color:var(--muted);font-size:11.5px}
+table.acbuild tr.tot th{background:var(--inv-bg);color:var(--inv-fg);font-size:13px}
+.acskip{margin:.3em 0;padding-left:1.2em;font-size:12.5px;color:var(--muted)}.acskip li{margin:.1em 0}.acskip b{color:var(--fg);font-style:italic}
+.mkbar label.chk{border:1px solid var(--line);padding:.15em .5em;cursor:pointer}.mkbar label.chk input{width:1.1em;height:1.1em;accent-color:var(--fg)}

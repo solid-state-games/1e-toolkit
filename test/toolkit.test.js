@@ -416,6 +416,130 @@ else {
     check('(h) fromCreator and fromQuickParty never throw on an empty object', e.nm === 'Empty' && SR.compute(e).errors.length === 0 && SR.fromQuickParty({ classes: [], levels: [], stats: {}, race: 'x' }).cl[0] === 'Fighter');
 }
 
+// ---- (i) Random PC methods and Appendix P, worn magic items and armour class, saving throws, old saves (TB 2026-11-12)
+{
+    const QPR = sandbox.QPRules, bad = [];
+    // each ability method (DMG p.11): ranges and shape
+    const stat = (m, n) => { let lo = 99, hi = 0, sum = 0, cnt = 0, shape = true; for (let i = 0; i < n; i++) { const r = QPR.rollAbilities(m), vals = Array.isArray(r) ? r : Object.keys(r).map(k => r[k]); if (vals.length !== 6) shape = false; if (!Array.isArray(r) && Object.keys(r).join() !== 'str,int,wis,dex,con,cha') shape = false; vals.forEach(v => { lo = Math.min(lo, v); hi = Math.max(hi, v); sum += v; cnt++; }); } return { lo, hi, mean: sum / cnt, shape }; };
+    const ms = [1, 2, 3, 4].map(m => stat(m, 3000));
+    check('(i) DMG p.11 Methods I-IV: six scores each, every score 3 to 18', ms.every(x => x.shape && x.lo >= 3 && x.hi <= 18), ms.map(x => x.lo + '-' + x.hi).join(' '));
+    check('(i) every method beats a plain 3d6 average (10.5) and reaches 18; Method III (best of six per score) is highest', ms.every(x => x.mean > 10.8 && x.hi === 18) && ms[2].mean > ms[0].mean && ms[2].mean > ms[3].mean, ms.map(x => x.mean.toFixed(2)).join(' '));
+    // Random PC: all four methods, with and without the Appendix P switch
+    const BAND = ['1', '1-2', '2-4', '5-7', '5-8', '7-9', '8-10', '8-11', '9-12'];
+    const prot = (nm) => /\+\d|Ring of Protection|Bracers of Defense|Cloak of/.test(nm);
+    let magicPCs = 0, plain = 0, appN = 0, protSeen = 0, miscSeen = 0;
+    for (const appP of [false, true]) for (const m of [1, 2, 3, 4]) for (let i = 0; i < 120; i++) {
+        const band = BAND[(i + m) % BAND.length], r = SR.randomPC({ method: m, appP, band, name: 'T' }), sh = r.sheet, v = SR.compute(sh), tag = (appP ? 'AppP' : 'M' + m) + ' ' + band + ' #' + i, hi = Number(band.split('-').pop()), lo = Number(band.split('-')[0]);
+        if (v.errors.length || v.warns.length) bad.push(tag + ' illegal ' + (v.errors[0] || v.warns[0]));
+        if (r.method !== (appP ? 1 : m) || r.appP !== appP) bad.push(tag + ' method echo');
+        const nC = sh.cl.length, cap = nC === 1 ? hi : Math.ceil((hi + nC) / nC) + 2; // DMG p.226: a multi-class PC gets (level + 1 per class) / classes, fractions counting as whole; XP is then shared, so classes with easier XP tables show a level or two higher
+        if (Math.max.apply(null, sh.lv) > cap || sh.lv.some(l => l < 1)) bad.push(tag + ' level ' + sh.lv + ' outside ' + band);
+        if (sh.cl.length === 1 && lo === hi && sh.lv[0] !== lo && sh.lv[0] < Math.min(lo, Rules.derive(SR.toChar(sh)).levelLimits[sh.cl[0]] || 99)) bad.push(tag + ' level ' + sh.lv);
+        if (SR.sizeOf(sh) >= SR.MAX_BYTES) bad.push(tag + ' size');
+        const names = r.rec.equipment, hasMagic = names.some(prot) || names.some(e => /Potion|Scroll|Wand|Ring of|Bag|Boots|Brooch|Rope|Javelin|Trident|Robe|Necklace|Folding|Cloak/.test(e));
+        if (!appP && hasMagic) bad.push(tag + ' magic item without the Appendix P switch: ' + names.join(', '));
+        if (appP && hasMagic) magicPCs++; if (!appP) plain++;
+        if (appP) { appN++; names.filter(prot).forEach(nm => { protSeen++; const plus = +(/\+(\d)/.exec(nm) || [0, 1])[1]; if (plus > 3 && !/Bracers/.test(nm)) bad.push(tag + ' plus ' + nm); }); if (r.rec.equipment.some(e => QPR.MISC.indexOf(e) >= 0)) miscSeen++; }
+        // each protective item is on the generator's App. P table for one of the character's classes
+        if (appP) names.forEach(nm => { const cls = r.rec.classes; const ok = /^Shield \+/.test(nm) ? cls.some(c => QPR.PROT[c].shield) : /^(Plate|Banded|Chain) Mail \+/.test(nm) ? cls.some(c => QPR.PROT[c][nm.split(' ')[0].toLowerCase()]) : /^Leather Armor \+/.test(nm) ? cls.some(c => QPR.PROT[c].leather) : /^Ring of Protection/.test(nm) ? cls.some(c => QPR.PROT[c].ring) : /^Bracers/.test(nm) ? cls.some(c => QPR.PROT[c].bracers) : true; if (!ok) bad.push(tag + ' ' + nm + ' not on the App. P table for ' + cls); });
+        if (appP && !/Made by the Random PC button as a PC on the spot/.test(sh.nt)) bad.push(tag + ' notes');
+        // the worn marks give a legal, best armour class: no other combination of the worn marks is better
+        if (SR.wearables(sh).length > 1 && SR.wearables(sh).length <= 8) {
+            const ws = SR.wearables(sh), n = ws.length; let bestAc = 99;
+            for (let mask = 0; mask < (1 << n); mask++) { const c = JSON.parse(JSON.stringify(sh)); ws.forEach((w, k) => SR.setWorn(c, w.i, !!(mask & (1 << k)), 0)); bestAc = Math.min(bestAc, SR.compute(SR.sanitize(c)).d.ac); }
+            if (v.d.ac !== bestAc) bad.push(tag + ' AC ' + v.d.ac + ' but a better wear gives ' + bestAc);
+        }
+    }
+    check('(i) Random PC, 960 sheets: Methods I-IV with and without the Appendix P switch are legal, level inside the band, under 16 kB, best worn marks', bad.length === 0, bad.slice(0, 5).join(' | '));
+    check('(i) without the switch there are no magic items; with it there are (protective items on the DMG p.226 table, misc items above 5th level)', plain === 480 && magicPCs > 40 && protSeen > 10 && miscSeen > 5, magicPCs + ' of ' + appN + ' with magic, ' + protSeen + ' protective, ' + miscSeen + ' with misc');
+    // AC cases. Fighter, Dex 10 (no adjustment), so the figures are the DMG's own.
+    const S = (inv, o) => { const s = SR.blank(); s.sc = [14, 10, 10, 10, 10, 10]; s.inv = inv; Object.assign(s, o || {}); return SR.compute(s); };
+    const W = ['w'], cases = [
+        ['no armour', [], 10], ['chain mail (worn by default, as before)', [['Chain', 1]], 5], ['chain mail marked not worn', [['Chain', 1, 'x']], 10], ['plain chain and small shield', [['Chain', 1], ['Shield, small', 1]], 4],
+        ['chain at an inn is never worn', null, 10],
+        ['Chain Mail +1 carried, not worn (magic is off until ticked)', [['Chain Mail +1', 1, 30]], 10], ['Chain Mail +1 worn: one better than chain (DMG p.164)', [['Chain Mail +1', 1, 30, 'w']], 4],
+        ['Plate Mail +5 worn', [['Plate Mail +5', 1, 45, 'w']], -2], ['Plate Mail of Etherealness is +5 plate', [['Plate Mail of Etherealness', 1, 45, 'w']], -2], ['Etherealness after 5 charges is +4 (DMG p.165)', [['Plate Mail of Etherealness +4', 1, 45, 'w']], -1],
+        ['Plate Mail of Vulnerability -2 is worse than plain plate (DMG p.165)', [['Plate Mail of Vulnerability -2', 1, 45, 'w']], 5], ['... -4', [['Plate Mail of Vulnerability -4', 1, 45, 'w']], 7],
+        ['Leather Armor +1 worn', [['Leather Armor +1', 1, 15, 'w']], 7], ['Studded Leather +1', [['Studded Leather +1', 1, 20, 'w']], 6], ['Splint Mail +4', [['Splint Mail +4', 1, 40, 'w']], 0],
+        ['small shield worn: one better', [['Shield, small', 1]], 9], ['Shield +1 alone is armour class 8 (DMG p.164)', [['Shield +1', 1, 5, 'w']], 8], ['Shield +3', [['Shield +3', 1, 5, 'w']], 6],
+        ['Shield, large, +1, +4 vs. missiles: 8 in melee', [['Shield, large, +1, +4 vs. missiles', 1, 10, 'w']], 8], ['Shield -1, missile attractor is no better than no shield (DMG p.165)', [['Shield -1, missile attractor', 1, 5, 'w']], 10],
+        ['two shields: the best counts', [['Shield, small', 1], ['Shield +2', 1, 5, 'w']], 7],
+        ['Chain Mail +1 and Shield +2', [['Chain Mail +1', 1, 30, 'w'], ['Shield +2', 1, 5, 'w']], 1],
+        ['two suits worn: the best counts (plain chain 5, plate 3)', [['Chain', 1], ['Plate', 1]], 3],
+        ['Ring of Protection +1 alone', [['Ring of Protection +1', 1, 0, 'w']], 9], ['Ring +4 on AC, +2 on saves', [['Ring of Protection +4 on AC, +2 on saving throws', 1, 0, 'w']], 6], ['Ring +6 on AC, +1 on saves', [['Ring of Protection +6 on AC, +1 on saving throws', 1, 0, 'w']], 4],
+        ['Ring +2, 5 foot radius: the wearer gets +2 AC', [["Ring of Protection +2, 5' radius", 1, 0, 'w']], 8],
+        ['Ring +2 with plain chain: cumulative (DMG p.130)', [['Chain', 1], ['Ring of Protection +2', 1, 0, 'w']], 3], ['Ring +2 with magic armour: no AC (DMG p.130)', [['Chain Mail +1', 1, 30, 'w'], ['Ring of Protection +2', 1, 0, 'w']], 4],
+        ['Ring +2 with a magic shield (not armour): works', [['Shield +1', 1, 5, 'w'], ['Ring of Protection +2', 1, 0, 'w']], 6],
+        ['two rings of protection: only the strongest', [['Ring of Protection +2', 1, 0, 'w'], ['Ring of Protection +3', 1, 0, 'w']], 7], ['a pair of +2 rings is still +2 (DMG p.130)', [['Ring of Protection +2', 2, 0, 'w']], 8],
+        ['protection ring plus another ring: both worn, 2 rings is fine', [['Ring of Protection +1', 1, 0, 'w'], ['Ring of Invisibility', 1, 0, 'w']], 9], ['three rings worn: none function (DMG p.129)', [['Ring of Protection +1', 1, 0, 'w'], ['Ring of Invisibility', 1, 0, 'w'], ['Ring of Fire Resistance', 1, 0, 'w']], 10],
+        ['Bracers of Defense AC 4 alone', [['Bracers of Defense AC 4', 1, 0, 'w']], 4], ['Bracers as Quick Party names them', [['Bracers of Defense, AC 6', 1, 0, 'w']], 6], ['Bracers and plain chain: not effective (DMG p.139)', [['Chain', 1], ['Bracers of Defense AC 2', 1, 0, 'w']], 5],
+        ['Bracers with leather: armour is worn, not effective', [['Leather', 1], ['Bracers of Defense AC 2', 1, 0, 'w']], 8], ['Bracers with Ring +2: other protection works (DMG p.139)', [['Bracers of Defense AC 4', 1, 0, 'w'], ['Ring of Protection +2', 1, 0, 'w']], 2],
+        ['Bracers with a plain shield: the shield is already in the bracers', [['Bracers of Defense AC 4', 1, 0, 'w'], ['Shield, small', 1]], 4], ['Bracers with Shield +2: the plus adds', [['Bracers of Defense AC 4', 1, 0, 'w'], ['Shield +2', 1, 5, 'w']], 2],
+        ['Cloak of Protection +2 alone', [['Cloak of Protection +2', 1, 2.5, 'w']], 8], ['cloak with leather works (DMG p.141)', [['Leather', 1], ['Cloak of Protection +2', 1, 2.5, 'w']], 6], ['cloak with chain does not function', [['Chain', 1], ['Cloak of Protection +2', 1, 2.5, 'w']], 5],
+        ['cloak with studded leather does not function (read as leather armour only)', [['Studded', 1], ['Cloak of Protection +2', 1, 2.5, 'w']], 7], ['cloak with magic leather does not function', [['Leather Armor +1', 1, 15, 'w'], ['Cloak of Protection +2', 1, 2.5, 'w']], 7],
+        ['cloak with a plain shield does not function (any shield, DMG p.141)', [['Shield, small', 1], ['Cloak of Protection +2', 1, 2.5, 'w']], 9], ['cloak with a magic shield does not function', [['Shield +1', 1, 5, 'w'], ['Cloak of Protection +2', 1, 2.5, 'w']], 8],
+        ['cloak with bracers and a ring: all combine', [['Bracers of Defense AC 4', 1, 0, 'w'], ['Ring of Protection +1', 1, 0, 'w'], ['Cloak of Protection +2', 1, 2.5, 'w']], 1], ['Cloak of Displacement +2', [['Cloak of Displacement', 1, 2.5, 'w']], 8],
+        ['Boots of Striding and Springing +1', [['Boots of Striding and Springing', 1, 3, 'w']], 9], ['Boots of Speed +2', [['Boots of Speed', 1, 3, 'w']], 8], ['dusty rose prism +1', [['Ioun Stone, dusty rose prism', 1, 0, 'w']], 9],
+        ['Staff of Power +2', [['Staff of Power', 1, 10, 'w']], 8], ['Helm of Brilliance +2', [['Helm of Brilliance', 1, 4.5, 'w']], 8], ['Sword +4, Defender holding 3 for AC', [['Sword +4, Defender', 1, 5, 'w3']], 7], ['Defender holding nothing', [['Sword +4, Defender', 1, 5, 'w']], 10],
+        ['unworn magic items do nothing', [['Ring of Protection +3', 1, 0], ['Cloak of Protection +3', 1, 2.5], ['Bracers of Defense AC 2', 1, 0], ['Staff of Power', 1, 10]], 10],
+        ['legacy custom armour row with an AC is worn as before', [['Elven Mithril Shirt', 1, 15, 3]], 3], ['Dexterity 16 adds -2', [['Chain', 1]], 3, { sc: [14, 10, 10, 16, 10, 10] }], ['Dexterity 3 adds +4', [], 14, { sc: [14, 10, 10, 3, 10, 10] }]
+    ];
+    const abad = [];
+    cases.forEach(c => {
+        let v;
+        if (c[1] === null) { const s = SR.blank(); s.sc = [14, 10, 10, 10, 10, 10]; s.lp = [['Inn', 0, 0, 0, 0, 0]]; s.inv = [['Chain', 1, '1']]; v = SR.compute(s); }
+        else v = S(c[1], c[3]);
+        if (v.d.ac !== c[2] || v.ac.total !== c[2]) abad.push(c[0] + ': ' + v.d.ac + ' expected ' + c[2]);
+        const sum = v.ac.rows.reduce((t, r) => t + r.d, 10); if (sum !== v.ac.total) abad.push(c[0] + ' build-up does not add up');
+    });
+    check('(i) armour class for ' + cases.length + ' worn/unworn cases and every combination rule (DMG p.124-169) equals the hand-worked figure', abad.length === 0, abad.slice(0, 6).join(' | '));
+    // missiles figure, monk, saves
+    check('(i) Shield, large, +1, +4 vs. missiles: AC 5 against missiles (DMG p.165)', S([['Shield, large, +1, +4 vs. missiles', 1, 10, 'w']]).ac.vsMissiles === 5 && S([['Shield +1', 1, 5, 'w']]).ac.vsMissiles === null);
+    const monk = (inv) => { const s = SR.blank(); s.cl = ['Monk']; s.al = 'LN'; s.sc = [15, 10, 15, 16, 11, 10]; s.inv = inv; return SR.compute(s); };
+    const m0 = monk([]), m1 = monk([['Ring of Protection +2', 1, 0, 'w']]), m2 = monk([['Chain', 1], ['Shield +2', 1, 5, 'w']]);
+    check('(i) a monk keeps the table AC and no Dexterity adjustment (PHB p.30-31); a ring adds, armour and shields are ignored', m1.d.ac === m0.d.ac - 2 && m2.d.ac === m0.d.ac, m0.d.ac + ' ' + m1.d.ac + ' ' + m2.d.ac);
+    const sv0 = S([]), sv1 = S([['Ring of Protection +2', 1, 0, 'w'], ['Cloak of Displacement', 1, 2.5, 'w']]), svM = S([['Chain Mail +1', 1, 30, 'w'], ['Ring of Protection +2', 1, 0, 'w']]);
+    const svOk = SR.SAVE_NAMES.every(k => sv1.saves[k].base === sv0.d.saves[k] && sv1.saves[k].eff === Math.max(1, sv0.d.saves[k] - 4) && sv0.saves[k].eff === sv0.d.saves[k] && svM.saves[k].eff === Math.max(1, sv0.d.saves[k] - 2));
+    check('(i) saving throws: ring +2 and cloak of displacement +2 lower every target by 4 (a bonus on the die); the ring still adds to saves with magic armour; none worn changes nothing', svOk && sv1.ac.save === 4 && svM.ac.save === 2 && svM.ac.armourSave[0].n === 1);
+    check('(i) cloak of protection gives its plus to saves only when it functions; a ring over the 2-ring limit gives none', S([['Cloak of Protection +3', 1, 2.5, 'w']]).ac.save === 3 && S([['Chain', 1], ['Cloak of Protection +3', 1, 2.5, 'w']]).ac.save === 0 && S([['Ring of Protection +1', 1, 0, 'w'], ['Ring of Invisibility', 1, 0, 'w'], ['Ring of Fire Resistance', 1, 0, 'w']]).ac.save === 0);
+    // worn marks: compact, stable, old saves
+    const o1 = SR.blank(); o1.inv = [['Chain', 1], ['Shield, small', 1], ['Chain Mail +1', 1, 30, 4], ['Dagger and scabbard', 1], ['Ring of Protection +2', 1, 0, 10]];
+    const o2 = JSON.parse(SR.pack(o1)), oc = SR.compute(o2);
+    check('(i) an old save (no worn marks) loads: plain armour and shield worn, magic items carried but not worn; no mark is stored for defaults', JSON.stringify(o2.inv) === JSON.stringify([['Chain', 1], ['Shield, small', 1], ['Chain Mail +1', 1, 30, 4], ['Dagger and scabbard', 1], ['Ring of Protection +2', 1, 0, 10]]) && oc.d.ac === 4 && oc.ac.rows.length === 4);
+    const t1 = SR.sanitize(o1); SR.setWorn(t1, 2, true, 0); SR.setWorn(t1, 0, false, 0); SR.setWorn(t1, 3, true, 0); SR.setWorn(t1, 4, true, 0);
+    const t2 = JSON.parse(SR.pack(t1));
+    check('(i) worn marks: only exceptions stored ("w" or "x"), a mark on a plain item is dropped, they survive pack and export/import, a mark never sits on an item left at a place', JSON.stringify(t2.inv) === JSON.stringify([['Chain', 1, 'x'], ['Shield, small', 1], ['Chain Mail +1', 1, 30, 4, 'w'], ['Dagger and scabbard', 1], ['Ring of Protection +2', 1, 0, 10, 'w']]) &&
+        JSON.stringify(SR.parseImport(SR.exportText(t1)).inv) === JSON.stringify(t2.inv) && SR.sanitize({ cl: ['Fighter'], lp: [['Inn', 0, 0, 0, 0, 0]], inv: [['Chain', 1, 'x', '1'], ['Chain Mail +1', 1, 30, 'w', '1']] }).inv.every(r => r[r.length - 1] === '1' && r.indexOf('w') < 0));
+    const mv = SR.sanitize({ cl: ['Fighter'], lp: [['Inn', 0, 0, 0, 0, 0]], inv: [['Chain Mail +1', 1, 30, 'w']] }); SR.moveItem(mv, 0, 1, 0); const atInn = JSON.stringify(mv.inv); SR.moveItem(mv, 0, 0, 0);
+    check('(i) moving a worn item to a place drops the mark (never worn there); bringing it back gives the default', atInn === '[["Chain Mail +1",1,30,"1"]]' && JSON.stringify(mv.inv) === '[["Chain Mail +1",1,30]]');
+    const bw = SR.sanitize({ cl: ['Fighter'], sc: [16, 10, 10, 10, 10, 10], inv: [['Chain', 1], ['Shield, small', 1], ['Chain Mail +1', 1, 30], ['Ring of Protection +2', 1, 0], ['Cloak of Protection +3', 1, 2.5], ['Bracers of Defense AC 4', 1, 0], ['Shield +1', 1, 5]] });
+    SR.bestWear(bw); const bwv = SR.compute(bw);
+    let bestAny = 99; { const ws = SR.wearables(bw); for (let mask = 0; mask < (1 << ws.length); mask++) { const c = SR.sanitize(JSON.parse(JSON.stringify(bw))); ws.forEach((w, k) => SR.setWorn(c, w.i, !!(mask & (1 << k)), 0)); bestAny = Math.min(bestAny, SR.compute(c).d.ac); } }
+    check('(i) "Wear the best set" reaches the lowest armour class of all combinations', bwv.d.ac === bestAny, bwv.d.ac + ' vs ' + bestAny);
+    // the Simple view shows the worn magic items and the saves with the bonus
+    const simp = G('SheetSimple').html(S([['Chain', 1], ['Ring of Protection +2', 1, 0, 'w'], ['Cloak of Protection +2', 1, 2.5]]), true);
+    check('(i) Simple view: worn chips list the worn ring and chain, the unworn cloak is carried gear; saves show the lowered figure with the table figure in brackets', /Worn: armour, shield, magic items/.test(simp) && /<li>Ring of Protection \+2<\/li>/.test(simp) && /Cloak of Protection \+2/.test(simp.split('Gear carried')[1] || '') && /<small class="muted">\(\d+\)<\/small>/.test(simp));
+    // Wizard characters: starting spells go to the spell book, nothing memorised (TB confirmed 2026-11-12)
+    const wz = SR.fromCreator({ race: 'Human', sex: 'm', classes: ['Magic-User'], levels: { 'Magic-User': 1 }, scores: { str: 10, int: 16, wis: 10, dex: 12, con: 10, cha: 10 }, alignment: 'N', hp: 4, spells: [{ s: 'Read Magic', cls: 'Magic-User' }, { s: 'Sleep', cls: 'Magic-User' }, { s: 'Magic Missile', cls: 'Magic-User' }, { s: 'Light', cls: 'Magic-User' }] }, 'W');
+    check('(i) a wizard magic-user: all four starting spells in the spell book (known), nothing memorised', wz.sk['Magic-User'][0].length === 4 && Object.keys(wz.sm).every(k => wz.sm[k].every(l => l.length === 0)));
+}
+// ---- (i) the typed protective-item rules diffed against the DMG text (pages 81, 124, 129-130, 134, 139-141, 145, 147, 164-165)
+if (fs.existsSync(path.join(root, '..', '..', '..', 'ADD-BOOKS-PDF', 'TEXT'))) {
+    const BK = path.join(root, '..', '..', '..', 'ADD-BOOKS-PDF', 'TEXT');
+    const norm = t => t.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[–−—]/g, '-').replace(/[’]/g, "'").replace(/\s+/g, ' ');
+    const cache = {}, pg = n => cache[n] || (cache[n] = norm(fs.readFileSync(path.join(BK, 'DMG', 'p' + String(n).padStart(3, '0') + '.txt'), 'utf8')));
+    const miss = [];
+    SR.WEAR_TEXT.forEach(x => x[2].forEach(f => { if (!pg(x[1]).includes(norm(f))) miss.push('p.' + x[1] + ' ' + x[0] + ': ' + f); }));
+    SR.MAGIC_AC_PICK.filter(m => /^Magic (armour|shields)/.test(m[0])).forEach(m => { const base = m[1].replace(/ -\d$/, ''); if (!pg(124).includes(norm(base))) miss.push('p.124 picker: ' + m[1]); });
+    check('(f) every protective-item rule fragment and every magic armour or shield name matches the DMG page text (' + SR.WEAR_TEXT.reduce((a, x) => a + x[2].length, 0) + ' fragments)', miss.length === 0, miss.slice(0, 5).join(' | '));
+    // figures: ring table, bracers table, cloak table against the data the code uses
+    const ring = SR.protectiveInfo, rb = [];
+    [['Ring of Protection +1', 1, 1], ['Ring of Protection +2', 2, 2], ["Ring of Protection +2, 5' radius", 2, 2], ['Ring of Protection +3', 3, 3], ['Ring of Protection +4 on AC, +2 on saving throws', 4, 2], ['Ring of Protection +6 on AC, +1 on saving throws', 6, 1]].forEach(r => { const i = ring(r[0]); if (!i || i.a !== r[1] || i.s !== r[2]) rb.push(r[0]); });
+    [8, 7, 6, 5, 4, 3, 2].forEach(a => { const i = ring('Bracers of Defense AC ' + a); if (!i || i.ac !== a) rb.push('bracers ' + a); });
+    [1, 2, 3, 4, 5].forEach(p => { const i = ring('Cloak of Protection +' + p); if (!i || i.a !== p || i.s !== p) rb.push('cloak ' + p); });
+    check('(f) ring of protection (AC and save plusses from the DMG p.130 table), bracers AC 8 to 2 (p.139) and cloaks +1 to +5 (p.141) are read as printed', rb.length === 0, rb.join(' | '));
+}
+
 const html = ['index.html', 'guide.html', 'js/app.js', 'css/toolkit.css'].map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
 check('no TSR or WotC marks, no em dashes in UI copy', !/TSR|Wizards of the Coast|ADVANCED D&D|—/.test(html.replace(credit, '')));
 

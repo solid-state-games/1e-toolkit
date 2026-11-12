@@ -13,7 +13,7 @@ const MORE = 14; // carried-gear names shown before "and N more"
 function box(title, body, cls) { return '<section class="box ' + (cls || '') + '"><h3>' + title + '</h3>' + body + '</section>'; }
 function stat(l, v, t) { return '<div class="sstat"' + (t ? ' title="' + esc(t) + '"' : '') + '><span>' + l + '</span><b>' + v + '</b></div>'; }
 
-// worn armour and shield, other carried gear (carried only, names x qty), coins carried
+// armour, shield and protective magic items marked worn, other carried gear (carried only, names x qty), coins carried
 function carried(sheet) {
     const worn = [], gear = [], ammo = {};
     SR.ammoLines(sheet).forEach(a => { ammo[a.name] = 1; });
@@ -21,10 +21,13 @@ function carried(sheet) {
         if (SR.locOf(e)) return;
         const r = SR.hydrateRow(e), nm = r.n + (r.qty > 1 ? ' x' + r.qty : '');
         if (ammo[r.n]) return;
-        if (r.shield || (r.ac !== undefined && r.ac !== null)) worn.push(nm); else gear.push(nm);
+        const w = SR.wearState(e);
+        if (w ? w.worn : (r.shield || (r.ac !== undefined && r.ac !== null))) worn.push(nm + (w && w.held ? ' (' + w.held + ' held for AC)' : '')); else gear.push(nm);
     });
     return { worn, gear };
 }
+
+function saveCell(t, bonus) { return t.eff === t.base ? String(t.base) : '<b title="Table figure ' + t.base + ', lowered by ' + bonus + ' for worn magic items">' + t.eff + '</b> <small class="muted">(' + t.base + ')</small>'; }
 
 function html(view, canWrite) {
     const s = view.sheet, d = view.d, A = d.abilities, dis = canWrite ? '' : ' disabled';
@@ -32,7 +35,7 @@ function html(view, canWrite) {
     // who: one line, beside AC, hit points and movement
     const lv = s.cl.map((c, i) => c + ' ' + s.lv[i]).join(' / ');
     h += '<section class="sident"><div class="sname"><h2>' + esc(s.nm || '(unnamed)') + '</h2><span>' + esc(s.race + (s.sub ? ' (' + s.sub + ')' : '')) + ', ' + esc(lv) + ', ' + esc(R.ALIGN_NAMES[s.al] || s.al) + '</span></div>' +
-        '<div class="sstats">' + stat('Armour class', d.ac, 'From armour worn and Dexterity (PHB p.36, 12)') +
+        '<div class="sstats">' + stat('Armour class', d.ac, 'From armour, shield and magic items worn, and Dexterity (PHB p.36, 11, DMG p.124-169): build-up on the Combat page of the Full sheet') +
         stat('Hit points now', '<input class="v tiny" data-f="hp" data-t="n" type="number" value="' + esc(s.hp) + '"' + dis + '>') +
         stat('Hit points full', '<input class="v tiny" data-f="hm" data-t="n" type="number" min="0" value="' + esc(s.hm) + '"' + dis + '>') +
         stat('Movement', d.movement.move + '"', 'Movement from encumbrance and armour (PHB p.101)') + '</div></section>';
@@ -45,7 +48,7 @@ function html(view, canWrite) {
     // saves and to-hit side by side
     const sv = d.saves, names = [['death', 'Death, poison'], ['petrification', 'Petrify, poly.'], ['wand', 'Rod, staff, wand'], ['breath', 'Breath'], ['spell', 'Spell']];
     const acs = []; for (let a = 10; a >= -10; a--) acs.push(a);
-    h += '<div class="two sv-hit"><section class="dbox"><h3>Saving throws</h3><table class="grid saves"><tr>' + names.map(n => '<th>' + n[1] + '</th>').join('') + '</tr><tr>' + names.map(n => '<td>' + sv[n[0]] + '</td>').join('') + '</tr></table></section>' +
+    h += '<div class="two sv-hit"><section class="dbox"><h3>Saving throws</h3><table class="grid saves"><tr>' + names.map(n => '<th>' + n[1] + '</th>').join('') + '</tr><tr>' + names.map(n => '<td>' + saveCell(view.saves[n[0]], view.ac.save) + '</td>').join('') + '</tr></table></section>' +
         '<section class="dbox"><h3>To hit by armour class</h3><div class="scroll"><table class="grid tohit simplehit"><tr><th>AC</th>' + acs.map(a => '<th>' + a + '</th>').join('') + '</tr>' +
         '<tr><th>Melee</th>' + acs.map(a => '<td>' + view.toHitRows.melee[a] + '</td>').join('') + '</tr><tr><th>Missile</th>' + acs.map(a => '<td>' + view.toHitRows.missile[a] + '</td>').join('') + '</tr></table></div></section></div>';
     // weapons and ammunition side by side (a section with nothing in it is left out)
@@ -80,7 +83,7 @@ function html(view, canWrite) {
     // coins and armour worn side by side; gear as one wrapped line
     const cg = carried(s), co = s.co, cn = ['pp', 'gp', 'ep', 'sp', 'cp'], hasCoin = co.some(x => x > 0);
     const cb = hasCoin ? '<section class="dbox"><h3>Coins carried</h3><div class="scoins">' + cn.map((n, i) => '<div><span>' + n + '</span><b>' + co[i] + '</b></div>').join('') + '</div></section>' : '';
-    const wb = cg.worn.length ? '<section class="dbox"><h3>Armour and shield worn</h3><ul class="chips">' + cg.worn.map(n => '<li>' + esc(n) + '</li>').join('') + '</ul></section>' : '';
+    const wb = cg.worn.length ? '<section class="dbox"><h3>Worn: armour, shield, magic items</h3><ul class="chips">' + cg.worn.map(n => '<li>' + esc(n) + '</li>').join('') + '</ul></section>' : '';
     if (cb || wb) h += '<div class="two' + (cb && wb ? '' : ' one') + '">' + cb + wb + '</div>';
     if (cg.gear.length) h += '<p class="gearline"><b>Gear carried</b> ' + cg.gear.slice(0, MORE).map(esc).join(', ') + (cg.gear.length > MORE ? ', and ' + (cg.gear.length - MORE) + ' more (Full sheet)' : '') + '</p>';
     h += '<p class="hint dhint">' + (canWrite ? 'Hit points, spells cast and ammunition can be changed here. ' : 'Read only. ') + '<button type="button" class="btn small" data-act="vw" data-v="full">Full sheet</button> edits the rest.</p>';

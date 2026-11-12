@@ -413,11 +413,24 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
         for (let i = 0; i < 8; i++) { await c1.click('[data-act="mk-reroll"]'); await c1.sleep(80); const t = await c1.ev('document.getElementById("rpreview").textContent'); lines.add(t); lvls.push(Number(/level (\d+)/.exec(t)[1])); }
         check('random: Re-roll gives new characters; band 9-12 gives high levels (multi-class levels are shared out, DMG p.176, so a class can be lower)', lines.size >= 6 && lvls.every(l => l >= 1 && l <= 12) && lvls.reduce((a, b) => a + b, 0) / lvls.length >= 6, lvls.join(','));
         check('random: nothing saved until Use', await tokSheet(c1, 'c1') === null);
+        // the method selector offers DMG p.11 Methods I-IV, the Appendix P switch is there; each method gives a legal preview
+        check('random: method selector lists Methods I to IV and the "PC on the spot (DMG Appendix P)" switch is off by default', await c1.ev('Array.from(document.querySelector("[data-cre=method]").options).map(function(o){return o.textContent.split(":")[0]}).join()') === 'I,II,III,IV' && await c1.ev('document.querySelector("[data-cre=appP]").checked===false&&/PC on the spot \\(DMG Appendix P\\)/.test(document.querySelector(".mkbar").innerText)'));
+        for (const m of ['1', '2', '3', '4']) { await c1.set('[data-cre="method"]', m); await c1.sleep(120); check('random: Method ' + m + ' gives a preview with scores, no magic items', /Str \d+(\/\d+)? Int \d+ Wis \d+ Dex \d+ Con \d+ Cha \d+/.test(await c1.ev('document.getElementById("rpreview").textContent')) && !/Magic and extras/.test(await c1.ev('document.getElementById("rpreview").textContent'))); }
+        let plainMagic = 0; for (let i = 0; i < 10; i++) { await c1.click('[data-act="mk-reroll"]'); await c1.sleep(60); if (/Magic and extras/.test(await c1.ev('document.getElementById("rpreview").textContent'))) plainMagic++; }
+        check('random: with the switch off, 10 re-rolls at levels 9-12 give no magic items', plainMagic === 0);
+        await c1.set('[data-cre="method"]', '3'); await c1.sleep(100);
+        await c1.click('[data-cre="appP"]'); await c1.sleep(250);
+        check('random: ticking the Appendix P switch disables the method selector (Method I is used) and says so', await c1.ev('document.querySelector("[data-cre=method]").disabled&&document.querySelector("[data-cre=appP]").checked&&/Appendix P/.test(document.querySelector(".create .hint, .box .hint").innerText)'));
+        let appMagic = 0, appLv = []; for (let i = 0; i < 12; i++) { await c1.click('[data-act="mk-reroll"]'); await c1.sleep(60); const t = await c1.ev('document.getElementById("rpreview").textContent'); if (/Magic and extras/.test(t)) appMagic++; appLv.push(Number(/level (\d+)/.exec(t)[1])); }
+        check('random: with the switch on, levels 9-12 characters carry Appendix P magic items', appMagic >= 4 && appLv.every(l => l >= 1 && l <= 12), appMagic + ' of 12, levels ' + appLv.join());
+        const keep = await c1.ev('localStorage.getItem("tk-random-pc")');
+        check('random: the last choices (level range, method, switch) are kept in this browser', /"band":"9-12"/.test(keep) && /"method":"3"/.test(keep) && /"appP":true/.test(keep), keep);
         await c1.shot(path.join(OUT, 'random-pc.png'));
         const shown = await c1.ev('document.getElementById("rpreview").textContent');
         await c1.click('[data-act="mk-use"]'); await c1.sleep(900);
         const rs = await tokSheet(c1, 'c1');
         check('random: Use saves the previewed character to the token and opens the sheet', rs && shown.indexOf(rs.race + ' ' + rs.cl.join('/')) === 0 && rs.lv.join('/') === /level ([\d/]+)/.exec(shown)[1] && await c1.ev('!document.querySelector(".mkgrid")&&!!document.querySelector(".simple, .sheettabs")'), shown);
+        check('random: the saved sheet shows the same armour class as the preview and notes the Appendix P origin', Number(/AC (-?\d+)/.exec(shown)[1]) === await c1.ev('SheetUI._state().view.d.ac') && /PC on the spot/.test(rs.nt), shown);
         await c1.ev('document.documentElement.dataset.theme="dark"'); await c1.sleep(100);
         // over an existing sheet: asks first
         await c1.click('[data-gear]'); await c1.click('#setov [data-act="newchar"]'); await c1.sleep(200);
@@ -431,6 +444,7 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
         check('blank: saves an empty fighter named after the token', bs && bs.nm === 'Fresh c2' && bs.cl.join() === 'Fighter' && bs.lv[0] === 1);
         // wizard end to end: a human fighter
         const c3 = await open('dev=player&view=sheet&item=c3', 1000, 900, true);
+        await c3.ev('document.documentElement.dataset.theme="light"');
         await c3.click('[data-act="mk-wizard"]'); await c3.sleep(1500);
         const W = e => c3.ev('(function(){var w=document.getElementById("wizframe").contentWindow;return w.eval(' + JSON.stringify(e) + ')})()');
         check('wizard: iframe is the copied wizard in embed mode (no history or restart buttons)', await W('EMBED === true') && await W('getComputedStyle(document.querySelector("header .no-embed")).display') === 'none');
@@ -439,8 +453,20 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
         await W('app.rollDetail("age")'); await W('app.rollDetail("hw")'); await W('app.rollDetail("skill")'); await W('app.rollGold()');
         await W('(function(){var i=WEAPONS.findIndex(function(w){return /^Sword, Long/.test(w.n)});app.buyItem("w",i,1);var a=ARMOR.findIndex(function(x){return x.n==="Chain"});app.buyItem("a",a,1);})()');
         await W('app.setStep(11)'); await W('app.nextStep()'); await W('(function(){var w=profWeapons();if(w.length)STATE.proficiencies=[w[0]];app.updateState()})()');
-        await W('app.setStep(15)'); await c3.sleep(500);
+        // the wizard takes the sheet's style: Jost, black and white only (no green or red: weight and italics), flat boxes, light and dark following the sheet
+        const wgrey = 'Array.from(document.querySelectorAll("body *")).filter(function(e){var c=getComputedStyle(e);return [c.color,c.backgroundColor,c.borderTopColor,c.borderBottomColor,c.borderLeftColor,c.borderRightColor].some(function(v){var m=v.match(/[\\d.]+/g);return m&&m.length>=3&&!(m[0]===m[1]&&m[1]===m[2])&&!(m.length===4&&m[3]==="0")})}).map(function(e){return e.tagName+"."+e.className}).slice(0,5).join()';
+        await W('app.setStep(9)'); await c3.sleep(500);
+        check('wizard in sheet (light): sheet theme passed in, Jost, no colour anywhere (computed colours of every element are grey)', await W('document.documentElement.dataset.theme') === 'light' && /Jost/.test(await W('getComputedStyle(document.body).fontFamily')) && await W(wgrey) === '', await W(wgrey));
+        check('wizard in sheet: better and worse are bold underlined and italic, not orange and red; boxes and buttons have no shadows', await W('document.querySelectorAll(".roll-positive").length>0') && await W('Array.from(document.querySelectorAll(".roll-positive")).every(function(e){var c=getComputedStyle(e);return +c.fontWeight>=600&&c.textDecorationLine.indexOf("underline")>=0})') && await W('Array.from(document.querySelectorAll(".roll-negative")).every(function(e){return getComputedStyle(e).fontStyle==="italic"})') &&
+            await W('Array.from(document.querySelectorAll("button,.box,input,select,.stat-box")).every(function(e){return getComputedStyle(e).boxShadow==="none"})') && await W('/bold, underlined/.test(document.getElementById("wizard-view").innerText)&&!/\\borange\\b|\\bred\\b/.test(document.getElementById("wizard-view").innerText.split("Highlights")[1].split("score of 10")[0])'));
         await c3.shot(path.join(OUT, 'wizard-in-sheet.png'));
+        await c3.ev('tkToggleTheme()'); await c3.sleep(500);
+        check('wizard in sheet (dark): follows the sheet by message, still no colour', await c3.ev('document.documentElement.dataset.theme') === 'dark' && await W('document.documentElement.dataset.theme') === 'dark' && await W(wgrey) === '' && await W('Array.from(document.querySelectorAll(".roll-positive,.roll-negative,.roll-result")).every(function(e){return getComputedStyle(e).color===getComputedStyle(document.body).color})') && await W('getComputedStyle(document.body).backgroundColor') === 'rgb(14, 14, 14)', await W(wgrey));
+        await c3.shot(path.join(OUT, 'wizard-in-sheet-dark.png'));
+        await c3.ev('tkToggleTheme()'); await c3.sleep(300);
+        check('wizard in sheet: switching the sheet back to light follows too', await W('document.documentElement.dataset.theme') === 'light');
+        await W('app.setStep(15)'); await c3.sleep(500);
+        check('wizard in sheet: the last step is also black and white', await W(wgrey) === '');
         check('wizard: step 15 has Finish and no export or restart in embed mode', await W('!!document.getElementById("embed-finish")') && await W('Array.from(document.querySelectorAll(".no-embed")).every(function(e){return getComputedStyle(e).display==="none"})'));
         const built = JSON.parse(await W('JSON.stringify(app.result())'));
         await c3.ev('document.getElementById("wizframe").contentWindow.document.getElementById("embed-finish").click()'); await c3.sleep(1200);
@@ -471,6 +497,64 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
         await g.ev('document.documentElement.dataset.density="compact"; document.documentElement.dataset.size="m"');
         check('random preview: compact spacing renders a preview and buttons', await g.ev('document.getElementById("rpreview").textContent.length>20'));
         await g.ev('localStorage.removeItem("tk-size");localStorage.removeItem("tk-density")');
+    }
+
+    // ---------- worn marks and armour class from magic items (TB 2026-11-12) ----------
+    {
+        const seed = await connect(PORT, BASE + '/guide.html'); await seed.sleep(300);
+        await seed.ev('(function(){var s=JSON.parse(localStorage.getItem("toolkit-dev-scene"));s.items.push({id:"w1",name:"Ward",layer:"CHARACTER",type:"IMAGE",createdUserId:"dev-player",metadata:{"io.github.solid-state-games.1e-toolkit/sheet":{nm:"Ward",race:"Human",cl:["Fighter"],lv:[5],sc:[16,10,10,16,10,10],al:"LG",hp:40,hm:40,inv:[["Chain",1],["Shield, small",1],["Chain Mail +1",1,30],["Ring of Protection +2",1,0],["Cloak of Protection +2",1,2.5],["Bracers of Defense AC 4",1,0],["Dagger and scabbard",1]]}}});localStorage.setItem("toolkit-dev-scene",JSON.stringify(s));})()');
+        await seed.close();
+        const a = await open('dev=player&view=sheet&item=w1', 1000, 1000);
+        await a.ev('localStorage.setItem("tk-sheet-view-PLAYER","full")'); await a.nav(BASE + '/index.html?dev=player&view=sheet&item=w1'); await a.sleep(900);
+        const AC = () => a.ev('SheetUI._state().view.d.ac'), SAVE = () => a.ev('SheetUI._state().view.ac.save'), INV = () => a.ev('JSON.stringify(SheetUI._state().sheet.inv)').then(JSON.parse);
+        const wear = async i => { await a.click('[data-act="wear"][data-i="' + i + '"]'); await a.sleep(250); };
+        await a.click('[data-act="tab"][data-i="3"]'); await a.sleep(200);
+        check('worn: Equipment lists a Worn tick for armour, shield and every protective magic item, ordinary armour and shield start ticked, magic items not', await a.ev('Array.from(document.querySelectorAll("[data-act=wear]")).map(function(e){return e.checked?1:0}).join("")') === '110000' && await a.ev('document.querySelector("[data-act=wear][data-i=\\"3\\"]").parentNode.title.indexOf("DMG p.1")>=0'));
+        check('worn: the picker offers armour, shields, rings of protection, bracers, cloaks and the other items', await a.ev('(function(){var t=Array.from(document.querySelectorAll("#mg-sel option")).map(function(o){return o.textContent}).join("|");return /Plate Mail \\+5/.test(t)&&/Shield, large, \\+1, \\+4 vs\\. missiles/.test(t)&&/Ring of Protection \\+4 on AC, \\+2 on saving throws/.test(t)&&/Bracers of Defense AC 2/.test(t)&&/Cloak of Protection \\+5/.test(t)&&/Cloak of Displacement/.test(t)&&/Defender/.test(t)})()'));
+        check('worn: chain, small shield and Dexterity 16 give armour class 2', await AC() === 2, String(await AC()));
+        await wear(2); const acMagic = await AC();
+        await wear(3); const acRing = await AC(), sv1 = await SAVE();
+        check('worn: Chain Mail +1 ticked gives 1 (chain 5, +1 magic, shield 1, Dex 2); a ring of protection with it adds no armour class but +2 on saves (DMG p.130)', acMagic === 1 && acRing === 1 && sv1 === 2, acMagic + ' ' + acRing + ' ' + sv1);
+        await wear(2); const acRing2 = await AC();
+        check('worn: unticking the magic armour lets the ring add its 2: armour class 0', acRing2 === 0, String(acRing2));
+        await wear(4); const acCloak = await AC();
+        check('worn: a cloak of protection does not function with chain and a shield (DMG p.141): no change, no save bonus from it', acCloak === 0 && await SAVE() === 2, acCloak + ' ' + await SAVE());
+        await wear(0); await wear(1);
+        check('worn: with the plain chain and shield off, the cloak works: 10 less Dex 2, ring 2, cloak 2 = 4', await AC() === 4 && await SAVE() === 4, await AC() + ' ' + await SAVE());
+        await wear(5);
+        check('worn: bracers of defense AC 4 with ring and cloak: armour class -2 (DMG p.139: they work with other magical protection)', await AC() === -2, String(await AC()));
+        const inv = await INV();
+        check('worn: only exceptions are stored: chain and shield "x", the ring, cloak and bracers "w", the dagger no mark', JSON.stringify(inv) === JSON.stringify([['Chain', 1, 'x'], ['Shield, small', 1, 'x'], ['Chain Mail +1', 1, 30], ['Ring of Protection +2', 1, 0, 'w'], ['Cloak of Protection +2', 1, 2.5, 'w'], ['Bracers of Defense AC 4', 1, 0, 'w'], ['Dagger and scabbard', 1]]), JSON.stringify(inv));
+        await a.click('[data-act="tab"][data-i="1"]'); await a.sleep(250);
+        const acTxt = await a.ev('document.querySelector(".acbuild").innerText');
+        check('worn: the Combat page shows the build-up (no armour, bracers, Dexterity, ring, cloak, total) with rule pages, and the total equals the sheet AC', /Bracers of Defense AC 4/.test(acTxt) && /Dexterity defensive adjustment/.test(acTxt) && /Ring of Protection \+2/.test(acTxt) && /Cloak of Protection \+2/.test(acTxt) && /DMG p\.139/.test(acTxt) && await a.ev('document.getElementById("actotal").textContent') === '-2');
+        await a.click('[data-act="tab"][data-i="0"]'); await a.sleep(250);
+        check('worn: saving throws on page 1 show the lowered figure with the printed one in brackets (ring and cloak: +4)', await a.ev('document.querySelectorAll("table.saves td b").length')=== 5 && /Worn magic items give \+4 on saving throws/.test(await a.ev('document.querySelector(".page").innerText')));
+        await a.click('[data-act="tab"][data-i="1"]'); await a.sleep(200);
+        await a.ev('document.documentElement.dataset.theme="light"'); await a.sleep(100);
+        await a.shot(path.join(OUT, 'ac-buildup.png'), { full: true });
+        // wear the best set, then the Simple view lists what is worn
+        await a.click('[data-act="wear-best"]'); await a.sleep(300);
+        const bestAc = await AC();
+        check('worn: "Wear the best set" reaches armour class ' + bestAc + ' or lower than the hand-set -2', bestAc <= -2, String(bestAc));
+        await a.click('[data-act="vw"][data-v="simple"]'); await a.sleep(300);
+        check('worn: the Simple view lists the worn items in its own box and shows the same armour class', /Worn: armour, shield, magic items/i.test(await a.ev('document.querySelector(".simple").innerText')) && Number((await a.ev('document.querySelector(".sstat b").textContent'))) === bestAc);
+        await a.ev('localStorage.setItem("tk-sheet-view-PLAYER","full")');
+        // a magic item added from the picker lands as not worn, then ticked changes AC; reload persists
+        await a.click('[data-act="vw"][data-v="full"]'); await a.sleep(300); await a.click('[data-act="tab"][data-i="3"]'); await a.sleep(200);
+        const before = await AC();
+        await a.set('#mg-sel', 'Boots of Striding and Springing'); await a.click('[data-act="mg-add"]'); await a.sleep(300);
+        const added = await a.ev('Array.from(document.querySelectorAll("[data-act=wear]")).length');
+        check('worn: a picked magic item is added carried and not worn (armour class unchanged)', added === 7 && await AC() === before, added + ' ' + await AC());
+        await a.click('[data-act="wear"][data-i="7"]'); await a.sleep(300);
+        check('worn: ticking the boots of striding and springing improves armour class by 1', await AC() === before - 1, before + ' -> ' + await AC());
+        await a.sleep(1500); await a.nav(BASE + '/index.html?dev=player&view=sheet&item=w1'); await a.sleep(1200);
+        check('worn: the worn marks survive a reload from token metadata', await AC() === before - 1);
+        // defender holds
+        await a.click('[data-act="tab"][data-i="3"]'); await a.sleep(200);
+        await a.set('#mg-sel', 'Sword +4, Defender'); await a.click('[data-act="mg-add"]'); await a.sleep(300); await a.click('[data-act="wear"][data-i="8"]'); await a.sleep(300);
+        await a.set('[data-act="held"][data-i="8"]', '3'); await a.sleep(300);
+        check('worn: a Defender sword with 3 of its +4 held back for armour class improves AC by 3 (DMG p.165)', await AC() === before - 4, String(await AC()));
     }
 
     // ---------- settings dialog (gear) and the dense Simple view (TD 2026-11-12) ----------
