@@ -239,7 +239,7 @@ const dv = s => SR.compute(s).d;
     const text = page.replace(/<[^>]*>/g, ' ');
     check('(g) Simple page has no thief skills (DMG p.19: the DM rolls them) and no loyalty or henchmen', !/pick pockets|hide in shadows|move silently|climb walls|find traps|loyalty|henchm|retainer/i.test(text) && tv.thief && !!Object.keys(tv.thief).length);
     check('(g) Simple page shows name, race, class and level, alignment, AC, HP now and full, movement', /Sneak/.test(text) && /Halfling \(Stout\)/.test(text) && /Thief 6/.test(text) && /True Neutral/.test(text) && /Armour class/.test(text) && /data-f="hp"[^>]*value="20"/.test(page) && /data-f="hm"[^>]*value="24"/.test(page) && /Movement/.test(text));
-    check('(g) Simple page: six ability scores with only the key adjustments, five saves, to-hit AC 10 to -10', /Str[\s\S]*hit [+-]?\d/.test(text) && /reaction [+-]?\d, defence [+-]?\d/.test(text) && /hp [+-]?\d/.test(text) && !/Open doors|System shock|% know spell|Max henchmen/.test(text) && /Para \/ poison/.test(text) && /<th>-10<\/th>/.test(page) && /<th>10<\/th>/.test(page));
+    check('(g) Simple page: six ability scores with only the key adjustments, five saves, to-hit AC 10 to -10', /Str[\s\S]*hit [+-]?\d/.test(text) && /reaction [+-]?\d, defence [+-]?\d/.test(text) && /hp [+-]?\d/.test(text) && !/Open doors|System shock|% know spell|Max henchmen/.test(text) && /Death, poison/.test(text) && /Petrify, poly\./.test(text) && /<th>-10<\/th>/.test(page) && /<th>10<\/th>/.test(page));
     check('(g) Simple page: weapons with damage S-M/L and speed, ammunition, coins, worn armour and shield, carried gear', /Dagger/.test(text) && /Damage S-M/.test(text) && /Sling stone/.test(text) && /Dart/.test(text) && /Leather/.test(text) && /Shield, small/.test(text) && /Rope/.test(text) && />22</.test(page));
     check('(g) read only render has no editable inputs or enabled buttons except Full sheet and switch', !/data-f="hp"[^>]*>/.test(SS.html(tv, false).replace(/data-f="hp"[^>]*disabled/g, '')) && !/<button[^>]*data-act="(cast|ammo|rest)"(?![^>]*disabled)[^>]*>/.test(SS.html(tv, false)) && /data-act="vw" data-v="full"/.test(SS.html(tv, false)));
     check('(g) default view by role: player Simple, GM Full', SR.defaultSheetView('PLAYER') === 'simple' && SR.defaultSheetView('GM') === 'full');
@@ -331,6 +331,89 @@ else {
     const ph = norm(page('PHB', 13)), chaBad = [];
     for (let c = 3; c <= 18; c++) { const r = Rules.derive({ race: 'Human', classes: ['Fighter'], levels: { Fighter: 1 }, scores: { str: 10, int: 10, wis: 10, dex: 10, con: 10, cha: c }, inventory: [] }).abilities.cha; const lo = r.loyalty === 0 ? 'normal' : (r.loyalty > 0 ? '+' : '-') + String(Math.abs(r.loyalty)).padStart(2, '0') + '%'; if (!new RegExp('(^| )' + c + ' (.* )?' + r.henchmen + ' ' + lo.replace('+', '\\+')).test(ph)) chaBad.push(c + ':' + r.henchmen + '/' + lo); }
     check('(f) Charisma henchmen and loyalty base (lib) match PHB p.13', chaBad.length === 0, chaBad.join(' | '));
+}
+
+// ---- (h) new sheets: Quick Party (Random PC) and the Character Creator wizard (TB 2026-11-12)
+{
+    const QPR = sandbox.QPRules, bad = [], sizes = [], notes = [];
+    const nums = (o, p) => { if (o === undefined || o === null) return; if (typeof o === 'number' && isNaN(o)) bad.push(p + ' NaN'); else if (typeof o === 'object') Object.keys(o).forEach(k => nums(o[k], p + '.' + k)); };
+    const derivesOk = (sh, tag) => {
+        const v = SR.compute(sh);
+        if (v.errors.length) { bad.push(tag + ' errors ' + v.errors[0]); return v; }
+        if (v.warns.length) bad.push(tag + ' illegal: ' + v.warns[0]);
+        nums(v.d, tag); nums(v.movement, tag); nums(v.toHitRows, tag);
+        const sz = SR.sizeOf(sh); sizes.push(sz); if (sz >= SR.MAX_BYTES) bad.push(tag + ' size ' + sz);
+        if (sh.nt.length >= SR.LIM.text - 20) bad.push(tag + ' notes at cap');
+        if (/undefined|NaN|\[object/.test(SR.previewLine(sh))) bad.push(tag + ' preview');
+        return v;
+    };
+    // Quick Party: 500 PCs in each level band, four ability methods
+    const BANDS = [[1, 1], [2, 4], [5, 8], [9, 12]];
+    let spellsSeen = 0, magicSeen = 0, thiefSame = 0, thiefN = 0;
+    BANDS.forEach(b => {
+        for (let i = 0; i < 500; i++) {
+            const lvl = b[0] + Math.floor(rng() * (b[1] - b[0] + 1)), method = 1 + (i % 4);
+            const rec = QPR.genPCParty({ count: 1, levelRange: lvl, method, alignMode: 'any' }).chars[0], tag = 'QP L' + b.join('-') + ' #' + i;
+            const sh = SR.fromQuickParty(rec, 'Token');
+            const v = derivesOk(sh, tag);
+            if (sh.cl.join('/') !== rec.classes.join('/') || sh.lv.join('/') !== rec.levels.join('/') || sh.hm !== rec.hp || sh.xp !== rec.xp || sh.sc.join() !== ['str', 'int', 'wis', 'dex', 'con', 'cha'].map(a => rec.stats[a]).join()) bad.push(tag + ' fields differ');
+            if (JSON.stringify(SR.sanitize(JSON.parse(SR.pack(sh)))) !== JSON.stringify(sh)) bad.push(tag + ' not stable through pack');
+            // every spell the generator memorised is on the sheet, in a class the sheet shows
+            const nSheet = Object.keys(sh.sm).reduce((a, c) => a + sh.sm[c].reduce((x, l) => x + l.length, 0), 0), nGen = (rec.spells || '').split('<b>').slice(1).reduce((a, l) => a + Number(/\((\d+)\):/.exec(l)[1]), 0);
+            if (nSheet !== nGen) bad.push(tag + ' spells ' + nSheet + ' vs ' + nGen);
+            Object.keys(sh.sm).forEach(c => { if (v.spellClasses.indexOf(c) < 0) bad.push(tag + ' spells hidden for ' + c); });
+            if (nGen) spellsSeen++;
+            // every item is a row or named in the notes
+            const rows = sh.inv.map(r => r[0]).join('|');
+            rec.equipment.forEach(e => { const plain = /^(Plate Mail|Banded Mail|Splint Mail|Chain Mail|Scale Mail|Studded Leather|Ring Mail|Leather Armor|Padded Armor|Shield|Long Sword|Dagger|Mace|Scimitar|Staff|Spear|Long Bow & Arrows|Thieves' Picks & Tools)$/.test(e); if (plain ? false : !sh.nt.includes(e) || !rows.includes(e.slice(0, 60))) bad.push(tag + ' item lost ' + e); });
+            if (rec.equipment.filter(e => /^(Plate Mail|Banded Mail|Chain Mail|Studded Leather|Leather Armor|Shield|Long Sword|Dagger|Mace|Scimitar|Staff)$/.test(e)).length && !sh.inv.length) bad.push(tag + ' no rows');
+            if (rec.equipment.some(e => /\+\d|Ring|Potion|Scroll|Wand/.test(e))) magicSeen++;
+            if (/Thief|Assassin|Monk/.test(sh.cl.join()) && v.thief) { thiefN++; const t = v.thief['Climb Walls']; if (t && rec.skills && rec.skills.includes('Climb Walls ' + t.total + '%')) thiefSame++; }
+            notes.push(sh.nt.length);
+        }
+    });
+    check('(h) 2000 Quick Party PCs (500 per level band 1, 2-4, 5-8, 9-12) convert, derive with no NaN, stay legal, every spell and item kept, under 16 kB', bad.length === 0, bad.slice(0, 6).join(' | '));
+    check('(h) Quick Party conversion exercised spells and magic items', spellsSeen > 200 && magicSeen > 200, spellsSeen + ' casters, ' + magicSeen + ' with magic');
+    check('(h) sheet thief climb walls equals the generator for thieves, assassins and monks (same PHB p.28 table)', thiefN > 50 && thiefSame >= thiefN * 0.97, thiefSame + ' of ' + thiefN);
+    console.log('     QP sheets: largest ' + Math.max.apply(null, sizes) + ' B, longest notes ' + Math.max.apply(null, notes) + ' chars');
+    // a known cleric and magic-user
+    const mu = SR.fromQuickParty({ race: 'Half-elf', classes: ['Magic-User'], levels: [1], stats: { str: 9, int: 16, wis: 10, dex: 14, con: 12, cha: 11, strX: null }, gender: 'Female', align: 'Chaotic Good', xp: 0, hp: 4, equipment: ['Dagger'], ac: 9,
+        spells: "<b>MU L1 (1):</b> Sleep<br><span class=\"opacity-60\">Book: Read Magic, Sleep, Light</span>", titles: 'Prestidigitator' }, 'Wren');
+    check('(h) known Quick Party magic-user: Half-Elf, CG, book and memorised spell, dagger, title in notes', mu.race === 'Half-Elf' && mu.al === 'CG' && mu.sex === 'f' && mu.sk['Magic-User'][0].join() === 'Read Magic,Sleep,Light' && mu.sm['Magic-User'][0].join() === 'Sleep' && mu.inv[0][0] === 'Dagger and scabbard' && /Prestidigitator/.test(mu.nt) && mu.nm === 'Wren');
+    // Creator wizard: 200 characters built the way the wizard builds them (rules_1e helpers), posted shape = charFromState + name, hp, levels, secondarySkill, spells
+    const wbad = []; let made = 0, tries = 0;
+    const cr = Rules.makeRng(777);
+    while (made < 200 && tries < 5000) {
+        tries++;
+        const method = 1 + (made % 4), ab = Rules.rollAbilities(method, cr); let raw = {};
+        if (method === 3) raw = ab.scores; else if (method === 4) raw = ab.sets[Math.floor(cr() * 12)]; else { const p = ab.pool.slice(); for (let i = p.length - 1; i > 0; i--) { const j = Math.floor(cr() * (i + 1)); [p[i], p[j]] = [p[j], p[i]]; } Rules.ABILITIES.forEach((a, i) => { raw[a] = p[i]; }); }
+        const sex = cr() < 0.5 ? 'm' : 'f', races = Object.keys(Rules.RACES).filter(r => Rules.applyRace(raw, r, sex).ok), race = races[Math.floor(cr() * races.length)];
+        if (!race) continue;
+        const ar = Rules.applyRace(raw, race, sex), opts = Rules.classesFor(race, ar.scores); if (!opts.length) continue;
+        const classes = opts[Math.floor(cr() * opts.length)], al = Rules.alignmentsFor(classes); if (!al.length) continue;
+        const c = { race, subrace: 'Stout', sex, classes, scores: ar.scores, chaRolled: raw.cha, alignment: al[Math.floor(cr() * al.length)], languages: [] };
+        c.strExc = Rules.rollStrExc(c, cr); c.age = Rules.rollAge(c, cr); const ag = Rules.applyAging(c, cr); c.scores = ag.scores; c.strExc = ag.strExc;
+        const hw = Rules.rollHeightWeight(c, cr); c.height = hw.height; c.weight = hw.weight; c.hp = Rules.rollHP(c, cr).hp;
+        c.coinsCP = Math.floor(cr() * 4000); c.inventory = [];
+        [].concat(Rules.EQUIPMENT.weapons, Rules.EQUIPMENT.armor, Rules.EQUIPMENT.gear).forEach(it => { if (cr() > 0.3) return; const ok = it.kind !== undefined ? Rules.canUseWeapon(classes, it, c).ok : (it.ac !== undefined ? Rules.canWearArmor(classes, it).ok : true); if (ok) c.inventory.push(Object.assign({ qty: 1 + Math.floor(cr() * 3) }, it, { _t: 'w' })); });
+        c.proficiencies = Rules.EQUIPMENT.weapons.filter(w => Rules.canUseWeapon(classes, w, c).ok).slice(0, 3).map(w => w.n);
+        c.name = made % 5 ? 'Hero ' + made : ''; c.levels = {}; classes.forEach(k => { c.levels[k] = 1; }); c.secondarySkill = Rules.rollSecondarySkill(cr); c.version = '1.9.0';
+        const rolls = Rules.rollStartingSpells(classes, cr); c.spells = [];
+        rolls.forEach(r => { r.fixed.forEach(sp => c.spells.push({ s: sp, cls: r.class })); r.picks.forEach(p => c.spells.push({ s: p.spell || 'Sleep', cls: r.class })); });
+        made++;
+        const posted = JSON.parse(JSON.stringify(c)), sh = SR.fromCreator(posted, 'Token'), tag = 'creator #' + made;
+        derivesOk(sh, tag);
+        if (sh.race !== race || sh.cl.join() !== classes.join() || sh.sc.join() !== Rules.ABILITIES.map(a => c.scores[a]).join() || sh.ex !== (c.strExc || 0) || sh.hm !== c.hp || sh.al !== c.alignment) wbad.push(tag + ' fields differ');
+        if (sh.nm !== (c.name || 'Token')) wbad.push(tag + ' name');
+        if (SR.coinPieces({ co: sh.co }) && Math.abs(SR.coinGp(sh) - c.coinsCP / 200) > 1e-9) wbad.push(tag + ' coins ' + SR.coinGp(sh) + ' vs ' + c.coinsCP / 200);
+        if (sh.inv.length !== c.inventory.length && sh.inv.length !== Math.min(SR.LIM.gear, c.inventory.length)) wbad.push(tag + ' inventory ' + sh.inv.length + ' vs ' + c.inventory.length);
+        const nSp = Object.keys(sh.sk).reduce((a, k) => a + sh.sk[k][0].length, 0); if (nSp !== c.spells.length) wbad.push(tag + ' spells ' + nSp + ' vs ' + c.spells.length);
+        if (!sh.nt.includes(c.secondarySkill)) wbad.push(tag + ' secondary skill not in notes');
+        if (SR.compute(sh).d.ac !== Rules.derive(Object.assign({}, c, { levels: c.levels })).ac) wbad.push(tag + ' AC differs from the creator');
+    }
+    check('(h) 200 wizard characters convert, derive with no NaN, stay legal, under 16 kB, AC equals the creator, spells kept, money exact', made === 200 && wbad.length === 0 && bad.length === 0, wbad.concat(bad).slice(0, 6).join(' | '));
+    const e = SR.fromCreator({}, 'Empty');
+    check('(h) fromCreator and fromQuickParty never throw on an empty object', e.nm === 'Empty' && SR.compute(e).errors.length === 0 && SR.fromQuickParty({ classes: [], levels: [], stats: {}, race: 'x' }).cl[0] === 'Fighter');
 }
 
 const html = ['index.html', 'guide.html', 'js/app.js', 'css/toolkit.css'].map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');

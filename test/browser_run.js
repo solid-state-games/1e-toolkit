@@ -9,7 +9,7 @@ fs.mkdirSync(OUT, { recursive: true });
 let fails = 0, total = 0; const check = (n, ok, d) => { total++; if (!ok) fails++; console.log((ok ? 'PASS ' : 'FAIL ') + n + (d ? '  (' + d + ')' : '')); };
 const ignorable = e => /fonts\.g(oogleapis|static)\.com|ERR_NAME_NOT_RESOLVED|ERR_INTERNET_DISCONNECTED|ERR_CONNECTION/.test(e);
 const pages = [];
-async function open(url, w, h) { const p = await connect(PORT, 'about:blank'); pages.push(p); await p.size(w || 1000, h || 1000); await p.nav(BASE + '/index.html?' + url); await p.sleep(900); return p; }
+async function open(url, w, h, raw) { const p = await connect(PORT, 'about:blank'); pages.push(p); await p.size(w || 1000, h || 1000); await p.nav(BASE + '/index.html?' + url); await p.sleep(900); if (!raw && await p.ev('!!document.querySelector(".mkgrid")')) { await p.click('[data-act="mk-blank"]'); await p.sleep(700); } return p; }
 const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();return {sheet:s.sheet,canWrite:s.canWrite,status:s.status,errors:s.view.errors,warns:s.view.warns}})())').then(JSON.parse);
 (async () => {
     const reset = await connect(PORT, BASE + '/guide.html'); await reset.sleep(500); await reset.ev('localStorage.clear(); localStorage.setItem("tk-sheet-view-PLAYER","full"); localStorage.setItem("tk-sheet-view-GM","full")'); await reset.close();
@@ -226,7 +226,7 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
     await p.ev('(function(){var t=SheetUI._state().sheet;})()');
     await p.set('[data-f="nm"]', 'Changed Name'); await p.sleep(700);
     await p.ev('(function(){var f=new File([' + JSON.stringify(exported) + '],"a.json",{type:"application/json"});var dt=new DataTransfer();dt.items.add(f);var i=document.getElementById("importFile");i.onchange=null;i.files=dt.files;})()');
-    await p.click('[data-act="import"]'); // opens the file input handler path (click is suppressed in headless; use the change below)
+    await p.click('[data-gear]'); await p.click('#setov [data-act="import"]'); await p.sleep(100); // opens the file input handler path (click is suppressed in headless; use the change below)
     await p.ev('(function(){var f=new File([' + JSON.stringify(exported) + '],"a.json",{type:"application/json"});var dt=new DataTransfer();dt.items.add(f);var i=document.getElementById("importFile");i.files=dt.files;i.dispatchEvent(new Event("change"));})()'); await p.sleep(900);
     const imp = await state(p);
     check('import restores the exported sheet and saves it', imp.sheet.nm === 'Aldric Thistlewood' && /Saved/.test(imp.status), imp.status);
@@ -392,6 +392,126 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
         await sg2.ev('localStorage.setItem("tk-sheet-view-GM","full"); localStorage.setItem("tk-sheet-view-PLAYER","full")');
     }
 
+
+    // ---------- creating a character: Blank / Wizard / Random PC (TB 2026-11-12) ----------
+    {
+        const addTok = (pg, id, name, who, meta) => pg.ev('(function(){var s=JSON.parse(localStorage.getItem("toolkit-dev-scene"));s.items.push({id:' + JSON.stringify(id) + ',name:' + JSON.stringify(name) + ',layer:"CHARACTER",type:"IMAGE",createdUserId:' + JSON.stringify(who) + ',metadata:' + JSON.stringify(meta || {}) + '});localStorage.setItem("toolkit-dev-scene",JSON.stringify(s));})()');
+        const tokSheet = (pg, id) => pg.ev('(function(){var s=JSON.parse(localStorage.getItem("toolkit-dev-scene"));var i=s.items.filter(function(x){return x.id===' + JSON.stringify(id) + '})[0];return JSON.stringify(i.metadata["io.github.solid-state-games.1e-toolkit/sheet"]||null)})()').then(JSON.parse);
+        const seed = await connect(PORT, BASE + '/guide.html'); await seed.sleep(300);
+        for (const id of ['c1', 'c2', 'c3', 'c4']) await addTok(seed, id, 'Fresh ' + id, 'dev-player');
+        await addTok(seed, 'c5', 'Not mine', 'dev-player2');
+        await seed.close();
+        // the Create menu
+        const c1 = await open('dev=player&view=sheet&item=c1', 900, 700, true);
+        check('create: a token with no sheet shows the choice, saves nothing yet', await c1.ev('!!document.querySelector(".mkgrid")') && await tokSheet(c1, 'c1') === null && /Blank sheet/i.test(await c1.ev('document.querySelector(".mkgrid").innerText')) && /Wizard/i.test(await c1.ev('document.querySelector(".mkgrid").innerText')) && /Random PC/i.test(await c1.ev('document.querySelector(".mkgrid").innerText')));
+        await c1.ev('document.documentElement.dataset.theme="light"'); await c1.shot(path.join(OUT, 'create-menu.png'));
+        // random PC
+        await c1.click('[data-act="mk-random"]'); await c1.sleep(300);
+        check('random: preview line shows race, class, level and scores; Re-roll and Use are there', /level \d/.test(await c1.ev('document.getElementById("rpreview").textContent')) && /Str \d/.test(await c1.ev('document.getElementById("rpreview").textContent')) && await c1.ev('!!document.querySelector("[data-act=mk-reroll]")&&!!document.querySelector("[data-act=mk-use]")'));
+        await c1.set('[data-cre="band"]', '9-12'); await c1.sleep(200); await c1.set('[data-cre="method"]', '2'); await c1.sleep(200);
+        let lines = new Set(), lvls = [];
+        for (let i = 0; i < 8; i++) { await c1.click('[data-act="mk-reroll"]'); await c1.sleep(80); const t = await c1.ev('document.getElementById("rpreview").textContent'); lines.add(t); lvls.push(Number(/level (\d+)/.exec(t)[1])); }
+        check('random: Re-roll gives new characters; band 9-12 gives high levels (multi-class levels are shared out, DMG p.176, so a class can be lower)', lines.size >= 6 && lvls.every(l => l >= 1 && l <= 12) && lvls.reduce((a, b) => a + b, 0) / lvls.length >= 6, lvls.join(','));
+        check('random: nothing saved until Use', await tokSheet(c1, 'c1') === null);
+        await c1.shot(path.join(OUT, 'random-pc.png'));
+        const shown = await c1.ev('document.getElementById("rpreview").textContent');
+        await c1.click('[data-act="mk-use"]'); await c1.sleep(900);
+        const rs = await tokSheet(c1, 'c1');
+        check('random: Use saves the previewed character to the token and opens the sheet', rs && shown.indexOf(rs.race + ' ' + rs.cl.join('/')) === 0 && rs.lv.join('/') === /level ([\d/]+)/.exec(shown)[1] && await c1.ev('!document.querySelector(".mkgrid")&&!!document.querySelector(".simple, .sheettabs")'), shown);
+        await c1.ev('document.documentElement.dataset.theme="dark"'); await c1.sleep(100);
+        // over an existing sheet: asks first
+        await c1.click('[data-gear]'); await c1.click('#setov [data-act="newchar"]'); await c1.sleep(200);
+        check('create over a sheet: asks to confirm, choices hidden until Replace it', await c1.ev('!!document.querySelector(".banner.confirm")&&!document.querySelector(".mkgrid")'));
+        await c1.click('[data-act="mk-cancel"]'); await c1.sleep(200);
+        check('create over a sheet: Keep it leaves the sheet alone', JSON.stringify(await tokSheet(c1, 'c1')) === JSON.stringify(rs));
+        // blank
+        const c2 = await open('dev=player&view=sheet&item=c2', 900, 700, true);
+        await c2.click('[data-act="mk-blank"]'); await c2.sleep(900);
+        const bs = await tokSheet(c2, 'c2');
+        check('blank: saves an empty fighter named after the token', bs && bs.nm === 'Fresh c2' && bs.cl.join() === 'Fighter' && bs.lv[0] === 1);
+        // wizard end to end: a human fighter
+        const c3 = await open('dev=player&view=sheet&item=c3', 1000, 900, true);
+        await c3.click('[data-act="mk-wizard"]'); await c3.sleep(1500);
+        const W = e => c3.ev('(function(){var w=document.getElementById("wizframe").contentWindow;return w.eval(' + JSON.stringify(e) + ')})()');
+        check('wizard: iframe is the copied wizard in embed mode (no history or restart buttons)', await W('EMBED === true') && await W('getComputedStyle(document.querySelector("header .no-embed")).display') === 'none');
+        await W('app.rollMethod(1)'); await W('(function(){var p=STATE.rolledPool.slice().sort(function(a,b){return b-a}),o=["str","con","dex","cha","wis","int"];o.forEach(function(a,i){app.assignStat(a,p[i])});})()'); await c3.sleep(200);
+        await W('app.setStep(2)'); await W('app.selectRace("Human")'); await W('app.selectClass("Fighter")'); await W('app.rollHP()'); await W('app.selectAlignment("NG")');
+        await W('app.rollDetail("age")'); await W('app.rollDetail("hw")'); await W('app.rollDetail("skill")'); await W('app.rollGold()');
+        await W('(function(){var i=WEAPONS.findIndex(function(w){return /^Sword, Long/.test(w.n)});app.buyItem("w",i,1);var a=ARMOR.findIndex(function(x){return x.n==="Chain"});app.buyItem("a",a,1);})()');
+        await W('app.setStep(11)'); await W('app.nextStep()'); await W('(function(){var w=profWeapons();if(w.length)STATE.proficiencies=[w[0]];app.updateState()})()');
+        await W('app.setStep(15)'); await c3.sleep(500);
+        await c3.shot(path.join(OUT, 'wizard-in-sheet.png'));
+        check('wizard: step 15 has Finish and no export or restart in embed mode', await W('!!document.getElementById("embed-finish")') && await W('Array.from(document.querySelectorAll(".no-embed")).every(function(e){return getComputedStyle(e).display==="none"})'));
+        const built = JSON.parse(await W('JSON.stringify(app.result())'));
+        await c3.ev('document.getElementById("wizframe").contentWindow.document.getElementById("embed-finish").click()'); await c3.sleep(1200);
+        const ws = await tokSheet(c3, 'c3');
+        check('wizard: Finish posts the character; the token gets a human fighter sheet and it opens', ws && ws.race === 'Human' && ws.cl.join() === 'Fighter' && ws.lv[0] === 1 && ws.hm === built.hp && ws.sc.join() === ['str', 'int', 'wis', 'dex', 'con', 'cha'].map(a => built.scores[a]).join() && ws.al === 'NG' && ws.inv.length === built.inventory.length && await c3.ev('!document.getElementById("wizframe")&&!!document.querySelector(".simple, .sheettabs")'), JSON.stringify(ws && ws.inv));
+        const c3s = await state(c3);
+        check('wizard: converted sheet derives with no errors or warnings and is saved in the token', c3s.errors.length === 0 && c3s.warns.length === 0 && /Saved/.test(c3s.status), c3s.status);
+        // a message from any other window is ignored
+        const c4 = await open('dev=player&view=sheet&item=c4', 1000, 900, true);
+        await c4.click('[data-act="mk-wizard"]'); await c4.sleep(800);
+        await c4.ev('window.postMessage({type:"1e-wizard-result",character:{name:"Spoof",classes:["Fighter"],race:"Human",scores:{str:10,int:10,wis:10,dex:10,con:10,cha:10},alignment:"N",hp:3}},"*")'); await c4.sleep(500);
+        check('wizard: a result not from the iframe is ignored', await tokSheet(c4, 'c4') === null && await c4.ev('!!document.getElementById("wizframe")'));
+        // tokens the user may not edit
+        const c5 = await open('dev=player&view=sheet&item=c5', 900, 600, true);
+        check('create: a token that is not theirs offers no creation', await c5.ev('!document.querySelector(".mkgrid")') && /belongs to another player/.test(await c5.ev('document.body.innerText')));
+        const g = await open('dev=gm&view=sheet&item=c5', 900, 600, true);
+        check('create: the GM can create on any character token', await g.ev('!!document.querySelector(".mkgrid")'));
+        // themes and spacing, black and white only
+        const grey = 'Array.from(document.querySelectorAll(".sheet *")).filter(function(e){var c=getComputedStyle(e);return [c.color,c.backgroundColor,c.borderTopColor].some(function(v){var m=v.match(/\\d+/g);return m&&m.length>=3&&!(m[0]===m[1]&&m[1]===m[2])&&!(m.length===4&&m[3]==="0")})}).length';
+        for (const th of ['light', 'dark']) { await g.ev('document.documentElement.dataset.theme=' + JSON.stringify(th)); check('create menu: ' + th + ' theme is black and white only', await g.ev(grey) === 0); }
+        await g.ev('document.documentElement.dataset.density="compact"; document.documentElement.dataset.size="s"');
+        const h1 = await g.ev('document.documentElement.scrollHeight');
+        await g.ev('document.documentElement.dataset.density="comfortable"; document.documentElement.dataset.size="l"');
+        const h2 = await g.ev('document.documentElement.scrollHeight');
+        check('create menu: compact spacing is shorter than comfortable and nothing overflows sideways', h1 < h2 && await g.ev('document.documentElement.scrollWidth<=document.documentElement.clientWidth'), h1 + ' vs ' + h2);
+        await g.click('[data-act="mk-random"]'); await g.sleep(200);
+        for (const th of ['light', 'dark']) { await g.ev('document.documentElement.dataset.theme=' + JSON.stringify(th)); check('random preview: ' + th + ' theme is black and white only', await g.ev(grey) === 0); }
+        await g.ev('document.documentElement.dataset.density="compact"; document.documentElement.dataset.size="m"');
+        check('random preview: compact spacing renders a preview and buttons', await g.ev('document.getElementById("rpreview").textContent.length>20'));
+        await g.ev('localStorage.removeItem("tk-size");localStorage.removeItem("tk-density")');
+    }
+
+    // ---------- settings dialog (gear) and the dense Simple view (TD 2026-11-12) ----------
+    {
+        const sp = await open('dev=player&view=sheet&item=t1', 760, 900);
+        await sp.ev('localStorage.setItem("tk-sheet-view-PLAYER","simple")'); await sp.nav(BASE + '/index.html?dev=player&view=sheet&item=t1'); await sp.sleep(900);
+        check('header: only title, Simple|Full, save status, gear and Close (no loose buttons)', /^vsw:Sheet view\|hstatus:Saved[^|]*\|btn:Settings\|btn:Close$/.test(await sp.ev('Array.from(document.querySelectorAll(".shead .sbtns > *")).map(function(e){return e.className.split(" ")[0]+":"+(e.getAttribute("aria-label")||e.textContent.trim())}).join("|")')));
+        check('header: no subtitle on Simple, gear is an inline SVG cog with aria-label Settings', await sp.ev('!document.querySelector(".shead .sub")&&!!document.querySelector(".gear svg")&&document.querySelector(".gear").getAttribute("aria-label")==="Settings"'));
+        check('header: save status shows in the header', /Saved/.test(await sp.ev('document.getElementById("hstatus").textContent')));
+        await sp.click('[data-gear]'); await sp.sleep(150);
+        check('settings: dialog opens with text size, spacing, theme, save, export, copy, import', await sp.ev('(function(){var t=document.getElementById("setov").innerText;return /Text size/.test(t)&&/Spacing/.test(t)&&/Light \\/ Dark/i.test(t)&&/Save now/i.test(t)&&/Export JSON/i.test(t)&&/Copy JSON/i.test(t)&&/Import JSON/i.test(t)})()'));
+        await sp.shot(path.join(OUT, 'sheet-settings.png'));
+        await sp.set('#set-size', 'l'); await sp.set('#set-density', 'compact');
+        check('settings: text size and spacing apply to the page and are remembered', await sp.ev('document.documentElement.dataset.size==="l"&&document.documentElement.dataset.density==="compact"&&localStorage.getItem("tk-size")==="l"&&localStorage.getItem("tk-density")==="compact"'));
+        await sp.ev('document.getElementById("set-theme").click()'); await sp.sleep(100);
+        check('settings: Light / Dark toggles the theme', await sp.ev('!!document.documentElement.dataset.theme&&localStorage.getItem("tk-theme")===document.documentElement.dataset.theme'));
+        await sp.ev('document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))'); await sp.sleep(100);
+        check('settings: Esc closes the dialog', await sp.ev('!document.getElementById("setov")'));
+        await sp.click('[data-gear]'); await sp.sleep(100); await sp.ev('document.getElementById("setov").click()'); await sp.sleep(100);
+        check('settings: a click outside the panel closes it', await sp.ev('!document.getElementById("setov")'));
+        await sp.click('[data-gear]'); await sp.ev('window.__dl=null;var oc=URL.createObjectURL;URL.createObjectURL=function(b){window.__dl=b;return oc.call(URL,b)}'); await sp.click('#setov [data-act="export"]'); await sp.sleep(300);
+        check('settings: Export JSON makes a file of the sheet and closes the dialog', await sp.ev('!!window.__dl&&window.__dl.size>200&&!document.getElementById("setov")'));
+        await sp.click('[data-gear]'); await sp.click('#setov [data-act="savenow"]'); await sp.sleep(600);
+        check('settings: Save now saves', /Saved/.test((await state(sp)).status));
+        await sp.ev('localStorage.removeItem("tk-size");localStorage.removeItem("tk-density");document.documentElement.removeAttribute("data-size");document.documentElement.removeAttribute("data-density")');
+        // the Simple height target: a fighter with 3 weapons, 1 ammunition line, no spells, 760px wide, Default spacing, Text M
+        const f = await open('dev=player&view=sheet&item=t1', 760, 900);
+        await f.ev('(function(){var s=JSON.parse(localStorage.getItem("toolkit-dev-scene"));var t=s.items.filter(function(x){return x.id==="t1"})[0];var k="io.github.solid-state-games.1e-toolkit/sheet";var m=t.metadata[k];m.cl=["Fighter"];m.lv=[4];m.race="Human";m.sc=[16,10,10,14,15,12];m.ex=0;m.sk={};m.sm={};m.cs={};m.am={};m.pf=["Sword, Long & scabbard","Dagger and scabbard","Bow, long"];m.inv=[["Chain",1],["Shield, small",1],["Sword, Long & scabbard",1],["Dagger and scabbard",1],["Bow, long",1],["Arrow, normal (12)",2],["Backpack, leather",1],["Rope, 50\'",1],["Torch",6]];m.co=[0,25,0,0,0];localStorage.setItem("toolkit-dev-scene",JSON.stringify(s));})()');
+        await f.ev('localStorage.setItem("tk-sheet-view-PLAYER","simple");document.documentElement.removeAttribute("data-size");document.documentElement.removeAttribute("data-density")'); await f.nav(BASE + '/index.html?dev=player&view=sheet&item=t1'); await f.sleep(900);
+        const ht = await f.ev('Math.ceil(document.querySelector(".sheet").getBoundingClientRect().height)'), nm = await f.ev('document.querySelector(".simple").innerText');
+        check('simple dense: fighter with 3 weapons, 1 ammunition line, no spells fits in about 560px at 760px wide', ht <= 600, ht + 'px');
+        check('simple dense: no spells box, no empty sections, gear is one wrapped line', !/Spells memorised/.test(nm) && await f.ev('!!document.querySelector(".gearline")&&document.querySelectorAll(".simple .dbox").length>=5') && await f.ev('!Array.from(document.querySelectorAll(".simple .dbox")).some(function(b){return b.innerText.trim().split("\\n").length<2})'));
+        check('simple dense: saves and to-hit side by side, weapons and ammunition side by side at 760px', await f.ev('(function(){var a=document.querySelectorAll(".sv-hit .dbox");var b=document.querySelectorAll(".two:not(.sv-hit) .dbox");return a.length===2&&Math.abs(a[0].getBoundingClientRect().top-a[1].getBoundingClientRect().top)<4&&b[0].getBoundingClientRect().top===b[1].getBoundingClientRect().top})()'));
+        check('simple dense: six ability boxes in one row', await f.ev('(function(){var a=Array.from(document.querySelectorAll(".sab"));return a.length===6&&a.every(function(e){return Math.abs(e.getBoundingClientRect().top-a[0].getBoundingClientRect().top)<3})})()'));
+        await f.ev('document.documentElement.dataset.theme="light"'); await f.shot(path.join(OUT, 'sheet-simple.png'), { full: true });
+        await f.size(600, 900); await f.sleep(300);
+        check('simple dense: below 760px the paired sections stack to one column', await f.ev('(function(){var a=document.querySelectorAll(".sv-hit .dbox");return a[1].getBoundingClientRect().top>a[0].getBoundingClientRect().top+10})()'));
+        // hub gear
+        const hub = await open('dev=player', 560, 700);
+        check('hub header: gear opens Text size, Spacing, Light / Dark only', await hub.ev('(function(){document.querySelector("[data-gear]").click();var t=document.getElementById("setov").innerText;var ok=/Text size/.test(t)&&/Spacing/.test(t)&&/Light \\/ Dark/i.test(t)&&!/Export|Save now/i.test(t);document.getElementById("setov").remove();return ok&&!document.querySelector(".hubhead .viewsel")})()'));
+    }
     // ---------- console errors ----------
     const errs = []; pages.forEach(x => x.errors.forEach(e => { if (!ignorable(e)) errs.push(e); }));
     check('no console errors on any page', errs.length === 0, errs.slice(0, 3).join(' | '));

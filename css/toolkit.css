@@ -156,3 +156,46 @@ ul.spchips{list-style:none;display:flex;flex-wrap:wrap;gap:.3em;margin:0;padding
 :root[data-density="comfortable"] .box{margin:1em 0;padding:.5em .8em .7em}
 :root[data-density="comfortable"] table.grid th,:root[data-density="comfortable"] table.grid td{padding:.3em .55em}
 :root[data-density="comfortable"] .cell{padding:.25em .4em}
+
+/* making a character: Blank / Wizard / Random PC */
+.mkgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:.6em;margin:.6em 0}
+.mkcard{border:1px solid var(--line);padding:.4em .8em .7em;display:flex;flex-direction:column;gap:.3em}.mkcard h3{margin:.2em 0}.mkcard p{margin:0;flex:1;font-size:13px}
+.mkbar{display:flex;gap:.6em;align-items:center;flex-wrap:wrap;margin:.4em 0}.mkbar label{display:flex;gap:.3em;align-items:center;font-size:13px}
+.preview{border:1px solid var(--line);padding:.5em .7em;font-size:15px;font-weight:500;margin:.4em 0;min-height:2.6em}
+.wizframe{width:100%;height:78vh;min-height:520px;border:1px solid var(--line);background:var(--bg)}
+@media(max-width:700px){.mkgrid{grid-template-columns:1fr}}
+
+/* Simple view, dense (TD 2026-11-12): one line of identity, one row of abilities, paired sections, empty sections left out */
+.dense .sident{padding:.15em 0;margin:.15em 0;align-items:center}
+.dense .sname{display:flex;align-items:baseline;gap:.7em;flex-wrap:wrap}.dense .sname h2{font-size:20px}.dense .sname span{font-size:13px}
+.dense .sstat{padding:.05em .55em;min-width:4.4em}.dense .sstat b{font-size:19px}.dense .sstat input.tiny{font-size:17px}
+.dense .sabs{margin:.2em 0}.dense .sab{padding:.05em .2em}.dense .sab b{font-size:19px}.dense .sab i{font-size:10.5px;line-height:1.15}
+.dense .two{display:grid;grid-template-columns:1fr 1fr;gap:.5em;margin:.2em 0}.dense .two.one{grid-template-columns:1fr}
+.dense .two.sv-hit{grid-template-columns:auto 1fr}
+.dense .dbox{border:1px solid var(--line);padding:.05em .4em .2em;min-width:0}.dense .dbox h3{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;margin:.15em 0 .1em}
+.dense table.grid th,.dense table.grid td{padding:.03em .25em;font-size:12px}
+.dense table.saves th{font-size:9.5px;max-width:4.8em;line-height:1.1;text-transform:uppercase}
+.dense table.simplehit th,.dense table.simplehit td{min-width:1.45em;padding:.03em .12em;font-size:11.5px}
+.dense .sprow{padding:.1em 0}.dense .splv{min-width:8.5em}.dense h4{margin:.1em 0}
+.dense ul.ammo{margin:0}.dense ul.ammo .an{min-width:0;flex:1;font-size:12.5px}.dense ul.ammo .acount{font-size:16px;min-width:1.8em}
+.dense .scoins div{padding:0}.dense .scoins b{font-size:14px}
+.dense ul.chips{margin:0}
+.gearline{margin:.2em 0;font-size:13px}.dhint{margin:.15em 0;font-size:11.5px}
+@media(max-width:759px){.dense .two,.dense .two.sv-hit{grid-template-columns:1fr}}
+.hstatus{font-size:12px;color:var(--muted);align-self:center}.hstatus.bad{color:var(--fg);font-weight:600}
+.shead.dense-head h1{font-size:20px}
+/* settings dialog */
+.gear{padding:.2em .45em;display:inline-flex;align-items:center}
+.setov{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:50;display:flex;align-items:flex-start;justify-content:flex-end;padding:3em 1em}
+.setpanel{background:var(--bg);color:var(--fg);border:2px solid var(--line);min-width:16em;max-width:92vw;padding:.4em .8em .8em;box-shadow:4px 4px 0 var(--line)}
+.sethead{display:flex;justify-content:space-between;align-items:center;margin-bottom:.3em}
+.setrow{display:flex;justify-content:space-between;align-items:center;gap:.8em;margin:.3em 0;font-size:13.5px}
+.setrow select{font-size:13px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+.setacts{display:flex;flex-direction:column;gap:.25em;margin-top:.5em;border-top:1px solid var(--line);padding-top:.5em}
+.dense .sident{flex-wrap:nowrap;border-top:0}.dense .sname{display:block}.dense .sname span{display:block;line-height:1.2}
+.dense table.grid th{font-size:10px;letter-spacing:.03em;white-space:nowrap;padding:.03em .3em}.dense table.saves th{white-space:normal}
+.sheet:has(.dense) .orn{display:none}
+.sheet:has(.dense) .sfoot{display:flex;gap:1em;align-items:center;justify-content:space-between;margin:0;padding:.1em 0 0;border-top:1px solid var(--line)}
+.sheet:has(.dense) .sfoot .meter{flex:0 0 auto;font-size:11px}.sheet:has(.dense) .sfoot .credit{font-size:9.5px;margin:0;text-align:right}
+.sheet:has(.dense) .shead{margin:.1em 0;padding:0}
+.dense .gearline{margin:.15em 0}

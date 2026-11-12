@@ -126,3 +126,30 @@ Sub-tabs Henchmen, Hirelings, Costs. Henchmen: compact table (name, race, class 
 4. HP full is editable in Simple as well as HP now.
 5. Worn = any carried item with an AC value or a shield; everything else carried (not ammunition) is gear.
 6. The situation-now modifiers are one shared set for all henchmen in a check (per-henchman sets were dropped); the typical-situation pick is shared too.
+
+
+## Creating a character: Blank / Wizard / Random PC (2026-11-12)
+**Flow.** A token with no sheet no longer gets an empty sheet saved on open: the sheet page shows three choices (the hub's "Create" and the right-click item both open it). Only for tokens the user may edit (private-sheet rules unchanged; a non-owner still sees "belongs to another player"). Gear, Settings, New character asks first when a sheet exists ("Replace it" / "Keep it"). Nothing is saved until Blank, Use (Random) or the wizard's Finish.
+- **Blank sheet:** as before (fighter 1, name from the token).
+- **Wizard:** `wizard/index.html?embed=1&theme=` in an iframe inside the sheet modal. The message is accepted only if `event.source` is that iframe and `event.origin` is our own origin. `SheetRules.fromCreator(char, tokenName)` converts it.
+- **Random PC:** level choice (1, 2-4, 5-8, 9-12; a level is picked in the band) and ability method I to IV (default I), `QPRules.genPCParty({count:1, levelRange, method, alignMode:'any'}).chars[0]` (wraps `genPC`, and adds the DMG App. P magic items and equipment record), `SheetRules.fromQuickParty(rec, tokenName)`, `previewLine` (race, class, level, alignment, six scores, HP, AC), Re-roll, Use this character, Back.
+- **Files:** `js/sheet_rules.js` (fromCreator, fromQuickParty, previewLine, qpSpells, coinsFromCP), `js/sheet_ui.js` (paintCreate, createAct, adopt, message listener), `css/toolkit.css`, `wizard/` (copies), `test/toolkit.test.js` section (h), `test/browser_run.js`.
+- **Copies needed in SHARED.json:** `1E_TOOLKIT/wizard/index.html <- 1e_CHARACTER_CREATOR/1e_character_creator_v1.9.0.html` and `1E_TOOLKIT/wizard/rules_1e.js <- 1e_CHARACTER_CREATOR/rules_1e.js` (hand-made copies carry the one-line header; the sync replaces them). The master creator got an embed mode (`?embed=1`): hides history, reset, TXT/MD, restart; no saved state, history or load; `?theme=dark|light`; Jost font and black highlight; step 15 gets "Finish: use this character", which posts `{type:"1e-wizard-result", character}`. Character = `charFromState()` plus `name, hp, levels, secondarySkill, spells[{s,cls}], version`. Standalone unchanged (creator test 8818 checks, walked once in a browser).
+- **Nothing dropped:** wizard: age, height, weight go to the Description; money to coins (200 cp = 1 gp, 20 sp = 1 gp, PHB p.35); chosen languages; starting spell book to Known; secondary skill, rolled Charisma (when changed) and a spell-book note to the notes. Quick Party: plain kit becomes price-list rows; magic and odd items become named rows (magic armour keeps weight and AC = base minus plus; shields count 1 as the sheet does) and are listed in full in the notes; title and generator AC in notes; spells to Known (book) and Memorised; anything unplaceable is quoted in the notes.
+- **Size:** QP sheets peak about 2.3 kB, notes about 520 characters.
+
+### Interpretations (TB to confirm)
+1. Random PC default method is I (the wizard has no default; Quick Party's is I). The band picks a level at random inside it; multi-class PCs share levels out (DMG p.176), so a "9-12" PC can show 6/6.
+2. "Long Bow & Arrows" becomes a long bow plus two packs of 12 arrows (24); the book gives no count.
+3. Proficiencies for Quick Party PCs: the carried weapons the class may use, up to its initial slots (PHB p.34); the generator gives none.
+4. Magic item effects (rings, bracers, plusses to hit) are not worked out on the sheet (existing interpretation 12), so a magical PC's sheet AC can be worse than the generator's; the generator AC is in the notes.
+5. Wizard characters keep nothing memorised (the book lists spells known; memorising is the player's choice).
+6. The wizard keeps its own look inside the sheet (boxes and shadows, green/red for better/worse); only the font (Jost) and the roll highlight (black) follow the sheet.
+
+## Settings dialog and dense Simple view (TD, 2026-11-12)
+- Sheet header: title, Simple | Full, save status, gear (inline SVG cog, aria-label Settings), Close. Gear opens a panel (Esc, outside click or Close shuts it): Text size, Spacing, Light / Dark, and on the sheet Save now, Export JSON, Copy JSON, Import JSON, New character (Save and Import hidden when read only). Hub header: gear with Text size, Spacing, Light / Dark. Code: `tkGear`, `tkOpenSettings` in `js/app.js`.
+- Simple view: identity on one line beside AC / HP / Move; six ability boxes in one row; saves beside to-hit, weapons beside ammunition, coins beside armour worn (two columns at 760px and up, one below); gear one wrapped line; sections with nothing (spells, ammunition, weapons, coins all zero, armour) are left out; no subtitle. Fighter with 3 weapons and 1 ammo line: 538 px at 760 wide, Default spacing, Text M (browser check, limit 600). Save column names are shortened ("Death, poison", "Petrify, poly.", "Rod, staff, wand").
+- Interpretation: coins are hidden when all five are zero.
+
+## Verification (this change)
+`node test/toolkit.test.js --check` (86 checks, incl. 2000 QP PCs and 200 wizard characters), `node test/browser_run.js` against `python3 -m http.server 8770` and headless Chromium (152 checks incl. Create menu, wizard end to end, random preview/re-roll/use, both themes, compact spacing, gear dialog, Simple height). Screenshots in `REVIEW/`: create-menu, wizard-in-sheet, random-pc, sheet-settings, sheet-simple.

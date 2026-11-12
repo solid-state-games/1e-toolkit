@@ -1,0 +1,1017 @@
+<!-- SHARED COPY of 1e_CHARACTER_CREATOR/1e_character_creator_v1.9.0.html: edit the master there, then run TOOLS/sync_lib.py -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>1e Character Creator v1.9.0</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+    :root {
+        --bg: #ffffff;
+        --fg: #000000;
+        --accent: #e0e0e0;
+        --danger: #ff4444;
+        --success: #1a881a;
+        --highlight: #ff8c00; /* Orange highlight for roll results/positives */
+        --font: 'Space Mono', monospace;
+    }
+    [data-theme="dark"] {
+        --bg: #121212;
+        --fg: #ffffff;
+        --accent: #333333;
+        --danger: #ff6666;
+        --success: #44ff44;
+        --highlight: #ffb74d; /* Orange highlight dark mode */
+    }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0; padding: 15px;
+        background: var(--bg); color: var(--fg);
+        font-family: var(--font);
+        line-height: 1.5;
+        font-size: 14px;
+    }
+    h1, h2, h3, h4 { text-transform: uppercase; margin-top: 0; margin-bottom: 10px; }
+    header {
+        display: flex; justify-content: space-between; align-items: center;
+        border-bottom: 4px solid var(--fg);
+        padding-bottom: 10px; margin-bottom: 20px;
+    }
+    .header-actions { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+    button, .btn {
+        background: var(--bg); color: var(--fg);
+        border: 2px solid var(--fg);
+        box-shadow: 4px 4px 0px var(--fg);
+        padding: 10px 16px; margin: 4px;
+        font-family: var(--font); font-weight: bold;
+        text-transform: uppercase; cursor: pointer;
+        transition: transform 0.1s, box-shadow 0.1s, background-color 0.1s, color 0.1s;
+        min-height: 40px;
+    }
+    button:hover:not(:disabled) {
+        background: var(--fg);
+        color: var(--bg);
+    }
+    button:active:not(:disabled) {
+        box-shadow: 0px 0px 0px var(--fg);
+        transform: translate(4px, 4px);
+    }
+    button:disabled {
+        opacity: 0.4; cursor: not-allowed;
+        box-shadow: none; transform: translate(4px, 4px);
+    }
+    button.primary {
+        background: var(--fg);
+        color: var(--bg);
+    }
+    button.primary:hover:not(:disabled) {
+        background: var(--bg);
+        color: var(--fg);
+    }
+    
+    input, select {
+        background: var(--bg); color: var(--fg);
+        border: 2px solid var(--fg);
+        padding: 10px; font-family: var(--font);
+        box-shadow: 2px 2px 0px var(--fg);
+        margin: 2px; width: 100%; max-width: 100%;
+        min-height: 40px; font-weight: bold;
+    }
+    input:focus, select:focus { outline: none; border-color: var(--fg); background: var(--accent); color: var(--fg); }
+    
+    .box {
+        border: 3px solid var(--fg);
+        box-shadow: 6px 6px 0px var(--fg);
+        padding: 15px; margin-bottom: 20px;
+        background: var(--bg);
+    }
+    .grid { display: grid; gap: 10px; }
+    .grid-2 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+    .grid-4 { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+    .grid-6 { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
+    
+    .stat-box { border: 2px solid var(--fg); padding: 10px; text-align: center; font-weight: bold; font-size: 1.1em; }
+    .table-responsive { overflow-x: auto; display: block; width: 100%; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; min-width: 400px; }
+    th, td { border: 2px solid var(--fg); padding: 8px; text-align: left; }
+    th { background: var(--fg); color: var(--bg); }
+    
+    .flex-between { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+    .wizard-nav { margin-top: 20px; display: flex; justify-content: space-between; align-items: center; border-top: 4px solid var(--fg); padding-top: 20px; flex-wrap: wrap; gap: 10px;}
+    .hidden { display: none !important; }
+    ul { margin: 0; padding-left: 20px; }
+    
+    .shop-container { display: flex; gap: 15px; align-items: flex-start; }
+    .shop-sidebar { flex: 0 0 120px; display: flex; flex-direction: column; gap: 5px; }
+    .shop-sidebar .tab { width: 100%; text-align: left; padding: 8px; font-size: 0.85em; border-width: 1px; min-width: unset; margin: 0; }
+    .shop-content { flex: 1; min-width: 0; }
+    
+    .shop-list { max-height: 400px; overflow-y: auto; border: 2px solid var(--fg); padding: 5px; margin-bottom: 10px; }
+    .shop-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 4px; border-bottom: 1px dashed var(--accent); gap: 10px;}
+    .name-input { font-size: 1.2em; padding: 10px; width: 100%; max-width: 400px; text-align: center; border-width: 3px; font-weight: bold; }
+
+    .tabs { display: flex; gap: 5px; margin-bottom: 10px; border-bottom: 3px solid var(--fg); padding-bottom: 5px; overflow-x: auto; scrollbar-width: none; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab { flex: 0 0 auto; margin: 0; background: var(--bg); border: 2px solid var(--fg); opacity: 0.6; box-shadow: none; min-width: 60px; padding: 8px 12px; }
+    .tab.active { 
+        opacity: 1; 
+        box-shadow: 4px 4px 0px var(--fg); 
+        transform: translate(-2px, -2px); 
+        font-weight: bold; 
+        background: var(--fg);
+        color: var(--bg);
+    }
+    
+    .roll-result, .roll-positive { color: var(--highlight); font-weight: bold; }
+    .roll-negative { color: var(--danger); font-weight: bold; }
+
+    /* Modal */
+    .modal-overlay {
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.7); display: flex; justify-content: center; align-items: center;
+        z-index: 1000; padding: 10px;
+    }
+    .modal-content {
+        background: var(--bg); border: 4px solid var(--fg);
+        box-shadow: 8px 8px 0px var(--fg); padding: 20px;
+        width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto;
+    }
+    .history-item {
+        border: 2px solid var(--fg); padding: 10px; margin-bottom: 10px;
+        display: flex; justify-content: space-between; align-items: center;
+    }
+    .spell-desc { font-size: 0.85em; color: var(--fg); opacity: 0.8; margin-top: 2px; font-weight: normal; }
+
+    @media (max-width: 600px) {
+        header { flex-direction: column; text-align: center; gap: 15px; }
+        .header-actions { justify-content: center; }
+        
+        /* Forces Next button above Back button */
+        .wizard-nav { flex-direction: column-reverse; text-align: center; }
+        .wizard-nav > div { width: 100%; }
+        .wizard-nav button { width: 100%; margin: 5px 0; }
+        
+        .shop-container { flex-direction: column; }
+        .shop-sidebar { flex-direction: row; width: 100%; overflow-x: auto; padding-bottom: 5px; border-bottom: 2px solid var(--accent); }
+        .shop-sidebar .tab { width: auto; white-space: nowrap; text-align: center; }
+        
+        .shop-item { flex-direction: column; align-items: stretch; text-align: center; }
+        .shop-item > span { margin-bottom: 5px; }
+        .grid { grid-template-columns: 1fr; }
+        .box { padding: 10px; }
+    }
+    /* embed mode (?embed=1, used inside the Owlbear sheet): no history, save, load or restart chrome */
+    html.embed .no-embed { display: none !important; }
+    html.embed { --font: 'Jost', sans-serif; --highlight: var(--fg); }
+</style>
+</head>
+<body>
+
+<header>
+    <div>
+        <h1>1e Character Creator <span style="font-size: 0.4em; vertical-align: middle;">v1.9.0</span></h1>
+        <small>Strict Rules As Written (RAW)</small>
+    </div>
+    <div class="header-actions">
+        <button class="no-embed" onclick="app.openHistory()" title="History"><i class="fas fa-history"></i></button>
+        <button onclick="app.toggleTheme()" title="Toggle Theme"><i class="fas fa-moon"></i></button>
+        <button class="no-embed" onclick="app.resetData()" title="Reset All Data"><i class="fas fa-trash"></i></button>
+    </div>
+</header>
+
+<main id="app-container">
+    <div id="wizard-view" class="box"></div>
+</main>
+
+<div id="modal-layer" class="modal-overlay hidden">
+    <div class="modal-content" id="modal-content"></div>
+</div>
+
+<script src="rules_1e.js"></script>
+<script>
+// All rules and tables live in rules_1e.js (global `Rules`). This file is the wizard only.
+const VERSION = '1.9.0';
+// Embed mode: ?embed=1 (optional ?theme=dark|light). Used inside another page (the Owlbear 1e Character Sheet).
+// No saved state, history or restart; Finish on step 15 posts the character to the parent window. Standalone is unchanged.
+const EMBED = /[?&]embed=1(&|$)/.test(location.search);
+const EMBED_THEME = (/[?&]theme=(dark|light)(&|$)/.exec(location.search) || [])[1];
+if (EMBED) document.documentElement.classList.add('embed');
+if (EMBED) { const jl = document.createElement('link'); jl.rel = 'stylesheet'; jl.href = 'https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&display=swap'; document.head.appendChild(jl); }
+const CONFIG = { DB_NAME: 'ADND1e_CharGen', DB_VER: 1, STORE_NAME: 'char_state' };
+const TOTAL_STEPS = 15;
+const { ABILITIES, ABILITY_NAMES, ALIGNMENTS, ALIGN_NAMES, RACES, CLASSES, CLASS_ORDER } = Rules;
+const WEAPONS = Rules.EQUIPMENT.weapons, ARMOR = Rules.EQUIPMENT.armor, GEAR = Rules.EQUIPMENT.gear, BEASTS = Rules.EQUIPMENT.beasts;
+const formatCoin = Rules.formatCoin;
+
+// Short reminders only. Magic Missile, Shocking Grasp and Enlarge were checked against PHB p.65-69.
+const SPELL_DESC = {
+    "Read Magic": "Deciphers magical writings, including scrolls and spellbooks.",
+    "Burning Hands": "A fan of flames from the caster's hands; damage depends on the caster's level.",
+    "Charm Person": "Makes a person regard the caster as a trusted friend and ally.",
+    "Enlarge": "Increases a creature's size by 20% per caster level, up to +200% (objects half that).",
+    "Friends": "Temporarily improves the caster's apparent Charisma.",
+    "Light": "Creates a light source.",
+    "Magic Missile": "Unerring missiles of force, 2-5 points (d4+1) each.",
+    "Push": "Pushes a small object away with a sudden force.",
+    "Shocking Grasp": "Electrical touch attack: d8 plus 1 point per caster level.",
+    "Sleep": "Puts creatures of low hit dice into a magical slumber.",
+    "Affect Normal Fires": "Controls the size of a normal fire.",
+    "Dancing Lights": "Creates movable lights.",
+    "Feather Fall": "Slows a fall to a safe rate.",
+    "Hold Portal": "Holds a door or gate shut.",
+    "Jump": "The recipient makes a great leap.",
+    "Protection From Evil": "Wards the recipient against evil and summoned creatures.",
+    "Shield": "An invisible barrier improves the caster's armour class.",
+    "Spider Climb": "Walk on walls and ceilings.",
+    "Ventriloquism": "Throws the caster's voice.",
+    "Comprehend Languages": "Understand spoken or written languages.",
+    "Detect Magic": "Detects magical auras.",
+    "Erase": "Removes writing, normal or magical.",
+    "Find Familiar": "Summons a magical familiar.",
+    "Identify": "Reveals the properties of a magic item.",
+    "Mending": "Repairs small breaks and tears.",
+    "Message": "Whisper a message to a distant target.",
+    "Unseen Servant": "An invisible force that does simple chores.",
+    "Write": "Inscribes a spell the caster does not know onto a scroll."
+};
+
+// --- STATE ---
+let STATE = getDefaultState();
+
+function getDefaultState() {
+    return {
+        ver: VERSION, id: Date.now().toString(), theme: 'light', step: 1, name: '', sex: 'm', rollMethod: 0,
+        rolledSets: [], rolledPool: [],
+        baseScores: { str: 0, int: 0, wis: 0, dex: 0, con: 0, cha: 0 },   // as rolled and assigned
+        raceScores: null,                                                   // after race
+        abilities: { str: 0, int: 0, wis: 0, dex: 0, con: 0, cha: 0 },     // final (after age)
+        strExc: 0, strExcBase: 0, chaRolled: 0,
+        race: '', subrace: 'Hairfoot', classes: [], hp: 0, hpDetail: [], alignment: '',
+        age: 0, ageChanges: [], height: 0, weight: 0, languages: [], secondarySkill: '',
+        moneyCP: 0, inventory: [], proficiencies: [], spellRolls: [], spellChoices: {},
+        shopTab: 'w', weaponFilter: 'all', gearFilter: 'all', modalItem: null, historyModalOpen: false
+    };
+}
+
+// --- DB HELPERS ---
+const dbWrapper = {
+    async init() {
+        return new Promise((resolve, reject) => {
+            const req = indexedDB.open(CONFIG.DB_NAME, CONFIG.DB_VER);
+            req.onupgradeneeded = e => { e.target.result.createObjectStore(CONFIG.STORE_NAME); };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    },
+    async save(state) {
+        if (EMBED) return;
+        try {
+            const db = await this.init();
+            const tx = db.transaction(CONFIG.STORE_NAME, 'readwrite');
+            tx.objectStore(CONFIG.STORE_NAME).put(state, 'save');
+        } catch (e) {
+            try { localStorage.setItem('adnd1e_backup', JSON.stringify(state)); } catch (e2) { /* storage unavailable */ }
+        }
+    },
+    async load() {
+        if (EMBED) return null;
+        try {
+            const db = await this.init();
+            const tx = db.transaction(CONFIG.STORE_NAME, 'readonly');
+            return new Promise(resolve => {
+                const req = tx.objectStore(CONFIG.STORE_NAME).get('save');
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => resolve(null);
+            });
+        } catch (e) {
+            try { const ls = localStorage.getItem('adnd1e_backup'); return ls ? JSON.parse(ls) : null; } catch (e2) { return null; }
+        }
+    }
+};
+
+const els = {};
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const clsName = () => STATE.classes.join('/');
+const hasClass = c => STATE.classes.indexOf(c) >= 0;
+const isThiefy = () => hasClass('Thief') || hasClass('Assassin') || hasClass('Monk');
+const isCaster = () => hasClass('Magic-User') || hasClass('Illusionist');
+const isFighterType = () => Rules.isFighterType(STATE.classes);
+
+function charFromState() {
+    return { race: STATE.race, subrace: STATE.subrace, sex: STATE.sex, classes: STATE.classes, scores: STATE.abilities, strExc: STATE.strExc,
+        chaRolled: STATE.chaRolled, age: STATE.age, alignment: STATE.alignment, inventory: STATE.inventory, coinsCP: STATE.moneyCP,
+        languages: STATE.languages, height: STATE.height, weight: STATE.weight, proficiencies: STATE.proficiencies };
+}
+const derived = () => Rules.derive(charFromState());
+const baseDone = () => ABILITIES.every(a => STATE.baseScores[a] > 0);
+
+function getHistory() {
+    try { return JSON.parse(localStorage.getItem('adnd_char_history') || '[]').filter(h => h.ver === VERSION); } catch (e) { return []; }
+}
+function saveToHistory(stateObj) {
+    if (EMBED) return;
+    try {
+        let all = JSON.parse(localStorage.getItem('adnd_char_history') || '[]');
+        const copy = JSON.parse(JSON.stringify(stateObj));
+        const idx = all.findIndex(h => h.id === stateObj.id);
+        if (idx > -1) all[idx] = copy; else all.push(copy);
+        localStorage.setItem('adnd_char_history', JSON.stringify(all));
+    } catch (e) { /* storage unavailable */ }
+}
+
+const fNum = (v, b, lowerBest = false) => {
+    const str = (v > 0 && !lowerBest) ? '+' + v : v;
+    if (v === b) return str;
+    const better = lowerBest ? (v < b) : (v > b);
+    return `<span class="${better ? 'roll-positive' : 'roll-negative'}">${str}</span>`;
+};
+const fPct = (v, b, suffix = '%') => {
+    if (v === b) return v + suffix;
+    return `<span class="${v > b ? 'roll-positive' : 'roll-negative'}">${v}${suffix}</span>`;
+};
+const fCnt = (v, b) => (v === b ? String(v) : `<span class="${v > b ? 'roll-positive' : 'roll-negative'}">${v}</span>`);
+const langBonus = () => Rules.languageSlots(charFromState()).bonus;
+const sgn = v => (v > 0 ? '+' + v : String(v));
+const strLabel = () => STATE.abilities.str + (STATE.strExc ? '/' + (STATE.strExc === 100 ? '00' : String(STATE.strExc).padStart(2, '0')) : '');
+
+// --- RENDERING HELPERS ---
+function renderNav(prev, next, nextDisabled = false) {
+    return `
+    <div class="wizard-nav">
+        <div>${prev ? `<button onclick="app.prevStep()"><i class="fas fa-arrow-left"></i> Back</button>` : ``}</div>
+        <div><strong>Step ${STATE.step} of ${TOTAL_STEPS}</strong></div>
+        <div>${next ? `<button class="primary" onclick="app.nextStep()" ${nextDisabled ? 'disabled' : ''}>${STATE.step === TOTAL_STEPS ? 'Finish' : 'Next'} <i class="fas fa-arrow-right"></i></button>` : ``}</div>
+    </div>`;
+}
+
+function poolOptions(stat) {
+    // a rolled score can be used only as many times as it was rolled
+    const used = {};
+    ABILITIES.forEach(a => { if (a !== stat && STATE.baseScores[a]) used[STATE.baseScores[a]] = (used[STATE.baseScores[a]] || 0) + 1; });
+    const count = {};
+    STATE.rolledPool.forEach(v => { count[v] = (count[v] || 0) + 1; });
+    return Object.keys(count).map(Number).sort((a, b) => b - a).filter(v => (used[v] || 0) < count[v] || STATE.baseScores[stat] === v);
+}
+
+function renderStep1() {
+    let html = `<h2>Step 1: Ability Scores</h2>`;
+    if (!STATE.rollMethod) {
+        html += `<p>Select a rolling method (DMG p.11):</p>
+            <div class="grid grid-2">
+                <div class="box"><h3>Method I</h3><p>Roll 4d6 six times, drop the lowest die each time. Arrange the scores as desired.</p><button class="primary" onclick="app.rollMethod(1)">Roll Method I</button></div>
+                <div class="box"><h3>Method II</h3><p>Roll 3d6 twelve times and keep the highest six. Arrange the scores as desired.</p><button class="primary" onclick="app.rollMethod(2)">Roll Method II</button></div>
+                <div class="box"><h3>Method III</h3><p>Roll 3d6 six times for each ability, in order, and keep the highest in each.</p><button class="primary" onclick="app.rollMethod(3)">Roll Method III</button></div>
+                <div class="box"><h3>Method IV</h3><p>Roll 3d6 for six abilities, in order, for 12 characters. Choose one set.</p><button class="primary" onclick="app.rollMethod(4)">Roll Method IV</button></div>
+            </div>`;
+    } else {
+        html += `<div style="text-align:right; margin-bottom: 10px;"><button onclick="app.resetAbilities()"><i class="fas fa-redo"></i> Reset / Re-roll</button></div>`;
+        if (STATE.rollMethod === 1 || STATE.rollMethod === 2) {
+            html += `<p>Assign your rolled scores: <strong class="roll-result">${STATE.rolledPool.join(', ')}</strong></p><div class="grid grid-3">`;
+            ABILITIES.forEach(stat => {
+                html += `<div class="stat-box"><label>${ABILITY_NAMES[stat]}</label><br>
+                    <select onchange="app.assignStat('${stat}', this.value)" style="font-size:1.1em; margin-top:5px; width: 100%;">
+                        <option value="0">--</option>
+                        ${poolOptions(stat).map(v => `<option value="${v}" ${STATE.baseScores[stat] == v ? 'selected' : ''}>${v}</option>`).join('')}
+                    </select></div>`;
+            });
+            html += `</div>`;
+        } else if (STATE.rollMethod === 4 && STATE.rolledSets.length > 0) {
+            html += `<p>Select one of the 12 sets:</p><div class="grid grid-4">`;
+            STATE.rolledSets.forEach((set, i) => {
+                html += `<div class="box" style="cursor:pointer; padding: 10px;" onclick="app.selectSet(${i})">
+                    <div style="text-align:center; border-bottom:1px solid var(--fg); margin-bottom:5px;"><strong>Set ${i + 1}</strong></div>
+                    <small>STR:${set.str} INT:${set.int} WIS:${set.wis}<br>DEX:${set.dex} CON:${set.con} CHA:${set.cha}</small></div>`;
+            });
+            html += `</div>`;
+        } else {
+            html += `<p>${STATE.rollMethod === 3 ? 'Scores generated in order.' : 'Set selected.'}</p><div class="grid grid-6">`;
+            ABILITIES.forEach(stat => { html += `<div class="stat-box">${ABILITY_NAMES[stat]}<br><span class="roll-result" style="font-size:1.5em;">${STATE.baseScores[stat]}</span></div>`; });
+            html += `</div>`;
+        }
+    }
+    html += renderNav(false, true, !baseDone());
+    return html;
+}
+
+function renderStep2() {
+    let html = `<h2>Step 2: Race</h2>
+    <div class="box flex-between">
+        <label><strong>Sex (sets the strength and exceptional strength limits, PHB p.15):</strong></label>
+        <select onchange="app.setSex(this.value)" style="width: 150px; font-weight: bold;">
+            <option value="m" ${STATE.sex === 'm' ? 'selected' : ''}>Male</option>
+            <option value="f" ${STATE.sex === 'f' ? 'selected' : ''}>Female</option>
+        </select>
+    </div>
+    <p>Racial modifiers are applied to your rolled scores first. The modified score must meet the race's minimum; a score above the race's maximum is lowered to it (PHB p.15).</p>
+    <div class="grid grid-3">`;
+    for (const r in RACES) {
+        const ar = Rules.applyRace(STATE.baseScores, r, STATE.sex);
+        const adj = Object.entries(RACES[r].adj).map(([k, v]) => `${k.toUpperCase()} ${sgn(v)}`).join(', ');
+        html += `<div class="box" style="opacity: ${ar.ok ? 1 : 0.4}">
+            <h3>${r}</h3>
+            <p><small>${adj ? 'Modifiers: ' + adj : 'No modifiers'}${RACES[r].infravision ? '<br>Infravision ' + RACES[r].infravision + ' ft' : ''}${ar.ok ? '' : '<br>' + esc(ar.reasons.join('; '))}</small></p>
+            <button style="width:100%" class="${STATE.race === r ? 'primary' : ''}" ${ar.ok ? '' : 'disabled'} onclick="app.selectRace('${r}')">${STATE.race === r ? '<i class="fas fa-check"></i> Selected' : 'Select'}</button>
+        </div>`;
+    }
+    html += `</div>`;
+    if (STATE.race === 'Halfling') {
+        html += `<div class="box flex-between"><label><strong>Halfling sub-race (sets the fighter level limit, PHB p.14):</strong></label>
+            <select onchange="app.setBasic('subrace', this.value)" style="width: 180px;">${Rules.HALFLING_SUBRACES.map(s => `<option ${STATE.subrace === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>`;
+    }
+    if (STATE.race && RACES[STATE.race].adj.cha && STATE.chaRolled !== STATE.raceScores.cha) {
+        html += `<p><small>Charisma rolled ${STATE.chaRolled}, recorded ${STATE.raceScores.cha}. Keep the rolled score for dealings with your own race's henchmen (PHB p.16-17).</small></p>`;
+    }
+    html += renderNav(true, true, !STATE.race);
+    return html;
+}
+
+function renderStep3() {
+    const sc = STATE.raceScores || STATE.abilities;
+    const card = (cl) => {
+        const res = Rules.classOk(cl, STATE.race, sc);
+        const reqs = cl.map(c => Object.entries(CLASSES[c].req).map(([k, v]) => `${k.toUpperCase()} ${v}`).join(', ')).join(' + ');
+        const lim = cl.map(c => { const l = Rules.levelLimit({ race: STATE.race, subrace: STATE.subrace, scores: sc }, c); return l === Infinity ? 'no limit' : 'level ' + l; }).join(', ');
+        const key = cl.join('/');
+        const sel = clsName() === key;
+        return `<div class="box" style="opacity: ${res.ok ? 1 : 0.4}">
+            <h3>${key}</h3>
+            <p><small>Reqs: ${reqs}<br>HD: ${cl.map(c => (CLASSES[c].initialHD > 1 ? CLASSES[c].initialHD : '') + 'd' + CLASSES[c].hd).join(', ')}<br>Level limit: ${lim}${res.ok ? '' : '<br>' + esc(res.reasons.join('; '))}</small></p>
+            <button style="width:100%" class="${sel ? 'primary' : ''}" ${res.ok ? '' : 'disabled'} onclick="app.selectClass('${key}')">${sel ? '<i class="fas fa-check"></i> Selected' : 'Select'}</button></div>`;
+    };
+    let html = `<h2>Step 3: Class</h2><p>Select your class based on your modified stats and race.</p><div class="grid grid-3">`;
+    CLASS_ORDER.forEach(c => { html += card([c]); });
+    html += `</div>`;
+    if (RACES[STATE.race].multi.length) {
+        html += `<h3 style="margin-top:20px">Multi-class</h3><p><small>Experience is always divided equally between the classes (PHB p.14-17).</small></p><div class="grid grid-3">`;
+        RACES[STATE.race].multi.forEach(m => { html += card(m); });
+        html += `</div>`;
+    }
+    html += renderNav(true, true, !STATE.classes.length);
+    return html;
+}
+
+function renderStep4() {
+    const hdTxt = STATE.classes.map(c => `${CLASSES[c].initialHD > 1 ? CLASSES[c].initialHD : 1}d${CLASSES[c].hd}`).join(' + ');
+    const adj = STATE.classes.map(c => `${c} ${sgn(Rules.conRow(STATE.abilities.con, Rules.FIGHTER_TYPES.indexOf(c) >= 0).hp)}`).join(', ');
+    let html = `<h2>Step 4: Hit Points</h2><div class="box" style="text-align: center;">
+        <p>Your class (${clsName()}) rolls ${hdTxt} at 1st level. Constitution adjustment per die: ${adj}. No die counts for less than 1 (PHB p.12).${STATE.classes.length > 1 ? ' Multi-classed: all dice are totalled and divided by the number of classes, rounding .5 up (PHB p.19).' : ''}</p>
+        ${STATE.hp > 0
+            ? `<div class="roll-result" style="font-size: 2em; margin: 10px;">${STATE.hp} HP</div>
+               <p><small>Dice: ${STATE.hpDetail.map(d => `d${d.die} rolled ${d.roll}${d.adj ? ' ' + sgn(d.adj) : ''}`).join('; ')}</small></p>
+               <button onclick="app.rollHP()" style="font-size: 0.9em"><i class="fas fa-redo"></i> Reroll HP</button>`
+            : `<button class="primary" onclick="app.rollHP()" style="font-size: 1.2em"><i class="fas fa-dice"></i> Roll Hit Points</button>`}
+    </div>`;
+    html += renderNav(true, true, !STATE.hp);
+    return html;
+}
+
+function renderStep5() {
+    const allowed = Rules.alignmentsFor(STATE.classes);
+    let html = `<h2>Step 5: Alignment</h2><p>Restricted by class: <strong>${clsName()}</strong> (PHB p.13, p.33)</p><div class="grid grid-3">`;
+    ALIGNMENTS.forEach(a => {
+        const valid = allowed.indexOf(a) >= 0;
+        html += `<div class="box" style="opacity: ${valid ? 1 : 0.4}"><h4>${ALIGN_NAMES[a]}</h4>
+            <button style="width:100%" class="${STATE.alignment === a ? 'primary' : ''}" ${valid ? '' : 'disabled'} onclick="app.selectAlignment('${a}')">${STATE.alignment === a ? '<i class="fas fa-check"></i> Selected' : 'Select'}</button></div>`;
+    });
+    html += `</div>`;
+    html += renderNav(true, true, !STATE.alignment);
+    return html;
+}
+
+function renderStep6() {
+    const cat = STATE.age ? Rules.ageCategory(STATE.race, STATE.age) : -1;
+    let html = `<h2>Step 6: Age</h2><div class="box" style="text-align: center;">
+        <p>Starting age is rolled by race and class (DMG p.12). Multi-classed characters use the oldest column at its maximum.</p>
+        ${STATE.age
+            ? `<div class="roll-result" style="font-size: 2em; margin: 10px;">${STATE.age} years old</div>
+               <p><strong>Category:</strong> ${cat >= 0 ? Rules.AGE_NAMES[cat] : 'Below young adult'}</p>
+               <p><small>Age adjustments to ability scores (DMG p.13) are applied automatically, cumulatively from young adulthood, never past racial maximums or below racial or class minimums.${STATE.ageChanges.length ? '<br>Applied: ' + esc(STATE.ageChanges.join(', ')) : ''}</small></p>
+               <button onclick="app.rollDetail('age')" style="font-size: 0.9em"><i class="fas fa-redo"></i> Reroll</button>`
+            : `<button class="primary" onclick="app.rollDetail('age')" style="font-size: 1.2em"><i class="fas fa-dice"></i> Roll Starting Age</button>`}
+    </div>`;
+    html += renderNav(true, true, !STATE.age);
+    return html;
+}
+
+function fmtHeight(h) { const f = Math.floor(h / 12), i = h - f * 12; return `${f}'${i % 1 ? i.toFixed(1) : i}"`; }
+function renderStep7() {
+    let html = `<h2>Step 7: Height and Weight</h2><div class="box" style="text-align: center;">
+        <p>Rolled from the DMG p.102 tables by race and sex (human player characters use the wider ranges on DMG p.12).</p>
+        ${STATE.height
+            ? `<div class="roll-result" style="font-size: 2em; margin: 10px;">${fmtHeight(STATE.height)} (${STATE.height}") / ${STATE.weight} lbs</div>
+               <p><small>Under 5 ft: no longbow or weapon over 12 ft. Under 100 lbs: no heavy crossbow, or pole arm or two-handed sword over 200 gp weight (PHB p.19).</small></p>
+               <button onclick="app.rollDetail('hw')" style="font-size: 0.9em"><i class="fas fa-redo"></i> Reroll</button>`
+            : `<button class="primary" onclick="app.rollDetail('hw')" style="font-size: 1.2em"><i class="fas fa-dice"></i> Roll Height & Weight</button>`}
+    </div>`;
+    html += renderNav(true, true, !STATE.height);
+    return html;
+}
+
+function renderStep8() {
+    const ls = Rules.languageSlots(charFromState()), choices = Rules.languageChoices(charFromState());
+    const taken = STATE.languages;
+    let html = `<h2>Step 8: Languages (Optional)</h2><div class="box">
+        <p><strong>Known languages:</strong> ${ls.known.join(', ')}</p>
+        <p><strong>Additional languages permitted:</strong> ${ls.bonus}${hasClass('Druid') ? '. Druids also gain one language each level from 3rd (PHB p.21).' : ''}</p>
+        ${ls.bonus > 0 ? `<div class="grid grid-4">${choices.concat(taken.filter(t => choices.indexOf(t) < 0)).map(lang => `
+            <label style="cursor:pointer; padding:5px; border:1px solid var(--accent); display:block; ${taken.includes(lang) ? 'border-color:var(--highlight); background:var(--accent); font-weight:bold;' : ''}">
+                <input type="checkbox" onchange="app.toggleLanguage('${lang}')" ${taken.includes(lang) ? 'checked' : ''} ${!taken.includes(lang) && taken.length >= ls.bonus ? 'disabled' : ''}> ${lang}
+            </label>`).join('')}</div>` : '<p><em>No additional languages permitted.</em></p>'}
+    </div>`;
+    html += renderNav(true, true, false);
+    return html;
+}
+
+function renderStep9() {
+    const D = derived(), A = D.abilities, B = Rules.derive({ race: 'Human', sex: 'm', classes: ['Magic-User'], scores: { str: 10, int: 10, wis: 10, dex: 10, con: 10, cha: 10 } }).abilities;
+    const cleric = hasClass('Cleric') || hasClass('Druid');
+    let html = `<h2>Step 9: Ability Score Modifiers</h2>
+    <p>Bonuses and penalties from your final scores. Highlights show improvements (<span class="roll-positive">orange</span>) or penalties (<span class="roll-negative">red</span>) against a score of 10.</p>
+    <div class="grid grid-2">
+        <div class="box"><h4>Strength (${strLabel()})</h4>
+            <p>Hit: ${fNum(A.str.hit, B.str.hit)}<br>Damage: ${fNum(A.str.dmg, B.str.dmg)}<br>Weight Allowance: ${fNum(A.str.wgt, B.str.wgt)} g.p.<br>Open Doors: ${A.str.openDoors}<br>Bend Bars/Lift Gates: ${fPct(A.str.bars, B.str.bars)}
+            ${!isFighterType() && STATE.abilities.str === 18 ? '<br><small>Only fighters roll exceptional strength (PHB p.9).</small>' : ''}</p></div>
+        <div class="box"><h4>Intelligence (${A.int.score})</h4>
+            <p>Additional languages for your race: ${langBonus()}${isCaster() ? `<br>Chance to Know Spell: ${fPct(A.int.learnPct, B.int.learnPct)}<br>Spells/Level: ${A.int.minSpells} - ${A.int.maxSpells}` : ''}</p></div>
+        <div class="box"><h4>Wisdom (${A.wis.score})</h4>
+            <p>Magical Attack Adjustment: ${fNum(A.wis.magicDef, B.wis.magicDef)}${cleric ? `<br>Bonus Spells: ${A.wis.bonusSpells.some(x => x) ? A.wis.bonusSpells.map((n, i) => n ? n + ' x level ' + (i + 1) : '').filter(Boolean).join(', ') : 'none'}<br>Spell Failure: ${A.wis.spellFail}%` : ''}</p></div>
+        <div class="box"><h4>Dexterity (${A.dex.score})</h4>
+            <p>Reaction/Attacking: ${fNum(A.dex.reaction, B.dex.reaction)}<br>Defensive (AC): ${fNum(A.dex.defense, B.dex.defense, true)}${hasClass('Monk') ? '<br><small>Monks get no armour class adjustment (PHB p.30).</small>' : ''}</p></div>
+        <div class="box"><h4>Constitution (${A.con.score})</h4>
+            <p>HP Adj per die: ${fNum(A.con.hp, B.con.hp)}<br>System Shock: ${fPct(A.con.shock, B.con.shock)}<br>Resurrection Survival: ${fPct(A.con.resurrection, B.con.resurrection)}<br>Raises possible: ${A.con.maxRaises}</p></div>
+        <div class="box"><h4>Charisma (${A.cha.score}${STATE.chaRolled && STATE.chaRolled !== A.cha.score ? ', rolled ' + STATE.chaRolled : ''})</h4>
+            <p>Max Henchmen: ${fCnt(A.cha.henchmen, B.cha.henchmen)}${A.cha.ownRaceHenchmen ? ` (${A.cha.ownRaceHenchmen} of your own race)` : ''}<br>Loyalty Base: ${fPct(A.cha.loyalty, B.cha.loyalty)}<br>Reaction Adj: ${fPct(A.cha.reaction, B.cha.reaction)}</p></div>
+    </div>`;
+    if (D.xpBonus && Object.values(D.xpBonus).some(x => x)) html += `<p><strong>Experience bonus:</strong> ${Object.entries(D.xpBonus).filter(e => e[1]).map(e => e[0] + ' +10%').join(', ')}</p>`;
+    html += renderNav(true, true, false);
+    return html;
+}
+
+function renderStep10() {
+    let html = `<h2>Step 10: Secondary Skills (Optional)</h2><div class="box" style="text-align:center;">
+        <p>A mundane profession practised before adventuring (DMG p.12). This step is optional: press Next to skip it.</p>
+        ${STATE.secondarySkill
+            ? `<div class="roll-result" style="font-size: 2em; margin: 10px;">${esc(STATE.secondarySkill)}</div><button onclick="app.rollDetail('skill')" style="font-size: 0.9em"><i class="fas fa-redo"></i> Reroll</button>`
+            : `<button class="primary" onclick="app.rollDetail('skill')" style="font-size: 1.2em"><i class="fas fa-dice"></i> Roll Secondary Skill</button>`}
+    </div>`;
+    html += renderNav(true, true, false);
+    return html;
+}
+
+function itemReason(item, type) {
+    const ch = charFromState();
+    if (type === 'w') return Rules.canUseWeapon(STATE.classes, item, ch);
+    if (type === 'a') return Rules.canWearArmor(STATE.classes, item);
+    return { ok: true };
+}
+
+function renderStep11() {
+    const gold = Rules.CLASSES[STATE.classes[0]].money;
+    let html = `<h2>Step 11: Wealth & Equipment</h2>`;
+    html += `<div class="box flex-between">
+        <div><h3>Wealth: <span class="roll-result">${STATE.moneyCP === 0 && !STATE.inventory.length ? 'not rolled' : formatCoin(STATE.moneyCP)}</span></h3>
+        <small>Starting gold: ${gold} g.p. by the ${STATE.classes[0]} dice (PHB p.35)${STATE.classes.length > 1 ? '; multi-classed characters roll for the first-named class' : ''}.</small></div>
+        <div>${STATE.moneyCP === 0 && STATE.inventory.length === 0
+            ? `<button class="primary" onclick="app.rollGold()"><i class="fas fa-coins"></i> Roll Gold (${gold})</button>`
+            : `<button onclick="app.clearInventory()"><i class="fas fa-undo"></i> Clear Inventory & Reroll</button>`}</div>
+    </div>`;
+    if (STATE.moneyCP > 0 || STATE.inventory.length > 0) {
+        html += `<div class="shop-container"><div class="shop-sidebar">
+                <button class="tab ${STATE.shopTab === 'w' ? 'active' : ''}" onclick="app.setBasic('shopTab', 'w')">Weapons</button>
+                <button class="tab ${STATE.shopTab === 'a' ? 'active' : ''}" onclick="app.setBasic('shopTab', 'a')">Armour</button>
+                <button class="tab ${STATE.shopTab === 'g' ? 'active' : ''}" onclick="app.setBasic('shopTab', 'g')">Gear</button>
+                <button class="tab ${STATE.shopTab === 'b' ? 'active' : ''}" onclick="app.setBasic('shopTab', 'b')">Beasts</button>
+            </div><div class="shop-content"><div class="shop-list">`;
+        const row = (w, i, type, extra) => {
+            const r = itemReason(w, type);
+            return `<div class="shop-item" style="${!r.ok ? 'opacity:0.4' : ''}" ${r.why ? `title="${esc(r.why)}"` : ''}>
+                <span>${esc(w.n)} <small>(${extra})</small><br><strong>${formatCoin(w.c)}</strong>${w.unpriced ? ' <small>(no PHB price)</small>' : ''}${r.why ? `<br><small>${esc(r.why)}</small>` : ''}</span>
+                <button onclick="app.initBuy('${w.bulk ? 'b' : 's'}', '${type}', ${i})" ${STATE.moneyCP < w.c || !r.ok ? 'disabled' : ''}>Buy</button></div>`;
+        };
+        if (STATE.shopTab === 'w') {
+            const tabs = [['all', 'All'], ['s', 'Swords'], ['r', 'Ranged'], ['p', 'Pole/Mnt'], ['b', 'Blunt'], ['a', 'Axe/Dag']];
+            html += `<div class="tabs sub-tabs">${tabs.map(t => `<button class="tab ${STATE.weaponFilter === t[0] ? 'active' : ''}" onclick="app.setBasic('weaponFilter', '${t[0]}')">${t[1]}</button>`).join('')}</div>`;
+            html += WEAPONS.map((w, i) => ({ w, i })).filter(x => STATE.weaponFilter === 'all' || x.w.cat === STATE.weaponFilter)
+                .map(x => row(x.w, x.i, 'w', `${x.w.w}lb${x.w.dm ? ', d ' + x.w.dm : ''}`)).join('');
+        } else if (STATE.shopTab === 'a') {
+            html += ARMOR.map((w, i) => row(w, i, 'a', `${w.ac !== null ? 'AC' + w.ac + ', ' : ''}${w.w}lb`)).join('');
+        } else if (STATE.shopTab === 'b') {
+            html += BEASTS.map((w, i) => `<div class="shop-item"><span>${w.n}<br><strong>${formatCoin(w.c)}</strong></span>
+                <button onclick="app.initBuy('s', 'b', ${i})" ${STATE.moneyCP < w.c ? 'disabled' : ''}>Buy</button></div>`).join('');
+        } else {
+            const tabs = [['all', 'All'], ['c', 'Clothing'], ['f', 'Provisions'], ['t', 'Transport'], ['r', 'Religion'], ['m', 'Misc']];
+            html += `<div class="tabs sub-tabs">${tabs.map(t => `<button class="tab ${STATE.gearFilter === t[0] ? 'active' : ''}" onclick="app.setBasic('gearFilter', '${t[0]}')">${t[1]}</button>`).join('')}</div>`;
+            html += GEAR.map((w, i) => ({ w, i })).filter(x => STATE.gearFilter === 'all' || x.w.cat === STATE.gearFilter).map(x => row(x.w, x.i, 'g', `${x.w.w}lb`)).join('');
+        }
+        const E = Rules.encumbrance(charFromState());
+        html += `</div></div></div>
+        <div class="box" style="margin-top: 20px;"><h3>Inventory</h3>
+            <div style="max-height: 250px; overflow-y:auto; border: 2px solid var(--fg); padding: 5px;">
+                ${STATE.inventory.map((item, idx) => `<div class="flex-between" style="border-bottom: 1px dashed var(--accent); padding-bottom: 5px; margin-bottom: 5px;">
+                    <span>${item.qty > 1 ? item.qty + 'x ' : ''}${esc(item.n)} <small>(${formatCoin(item.c * item.qty)})</small></span>
+                    <button onclick="app.sellItem(${idx})" style="padding: 4px 8px; font-size:0.8em; min-height: 30px;">Sell ${item.qty > 1 ? 'All' : ''}</button></div>`).join('')}
+                ${STATE.inventory.length === 0 ? '<p><em>Empty</em></p>' : ''}
+            </div>
+            <p style="margin-top: 10px;"><strong>Encumbrance: ${E.lb.toFixed(1)} lbs (${E.gp} g.p.)</strong>, movement ${E.move}" (PHB p.101, DMG p.27).${E.allowance ? ' Strength allowance ' + sgn(E.allowance) + ' g.p.' : ''}</p>
+        </div>`;
+    }
+    html += renderNav(true, true, false);
+    return html;
+}
+
+function profWeapons() {
+    const seen = {}, out = [];
+    WEAPONS.forEach(w => {
+        if (w.ammo) return;
+        const nm = w.n.replace(/ and scabbard| & scabbard| & bullets \(12\)/g, '').replace(/ \((light|medium|heavy) horse\)/, '');
+        if (!Rules.canUseWeapon(STATE.classes, w, charFromState()).ok || seen[nm]) return;
+        seen[nm] = 1; out.push(nm);
+    });
+    return out;
+}
+function renderStep12() {
+    const D = derived(), count = D.weaponProf.initial, allowed = profWeapons();
+    let html = `<h2>Step 12: Weapon Proficiencies</h2><div class="box">
+        <p>Your class (${clsName()}) starts with <strong>${count}</strong> weapon proficiencies. Using any other weapon is at ${D.weaponProf.nonProficiencyPenalty} to hit (PHB p.37).</p>
+        <div class="grid grid-2">`;
+    for (let i = 0; i < count; i++) {
+        html += `<div><label>Slot ${i + 1}:</label>
+            <select style="width:100%" onchange="app.setProficiency(${i}, this.value)">
+                <option value="">-- Select Weapon --</option>
+                ${allowed.map(w => `<option value="${esc(w)}" ${STATE.proficiencies[i] === w ? 'selected' : ''} ${STATE.proficiencies.includes(w) && STATE.proficiencies[i] !== w ? 'disabled' : ''}>${esc(w)}</option>`).join('')}
+            </select></div>`;
+    }
+    html += `</div></div>`;
+    html += renderNav(true, true, STATE.proficiencies.filter(p => p).length < count);
+    return html;
+}
+
+function finalSpells() {
+    const out = [];
+    STATE.spellRolls.forEach((r, ri) => {
+        r.fixed.forEach(s => out.push({ s, cls: r.class }));
+        r.picks.forEach((p, pi) => out.push({ s: p.spell || STATE.spellChoices[ri + ':' + pi] || null, cls: r.class, ri, pi, list: p.list, roll: p.roll }));
+    });
+    return out;
+}
+function renderStep13() {
+    let html = `<h2>Step 13: Starting Spells</h2>`;
+    const fs = finalSpells();
+    if (STATE.spellRolls.length) {
+        html += `<div class="box"><h3 style="text-align: center;">Your First Level Spells</h3><ul style="list-style:none; padding:0; font-size:1.1em;">`;
+        fs.forEach(e => {
+            if (e.s) html += `<li style="margin-bottom: 10px; border-bottom: 1px dashed var(--accent); padding-bottom: 5px;"><strong><i class="fas fa-star roll-result"></i> <span class="roll-result">${esc(e.s)}</span></strong> <small>(${e.cls})</small><div class="spell-desc">${esc(SPELL_DESC[e.s] || '')}</div></li>`;
+            else {
+                const taken = fs.map(x => x.s).filter(Boolean);
+                const opts = Rules.MU_LEVEL1.filter(x => taken.indexOf(x) < 0 && x !== 'Read Magic');
+                html += `<li style="margin-bottom: 10px; border-bottom: 1px dashed var(--accent); padding-bottom: 5px;"><strong>Rolled 10 on the ${e.list} list: your choice</strong>
+                    <select onchange="app.chooseSpell('${e.ri}:${e.pi}', this.value)"><option value="">-- Choose a first level spell --</option>${opts.map(x => `<option>${esc(x)}</option>`).join('')}</select></li>`;
+            }
+        });
+        html += `</ul><div style="text-align:center; margin-top: 15px;"><button onclick="app.rollSpells()" style="font-size:0.9em"><i class="fas fa-redo"></i> Reroll Spells</button></div></div>`;
+    } else {
+        html += `<div class="box" style="text-align: center;">
+            <p>${hasClass('Magic-User') ? 'Magic-users begin with <em>Read Magic</em> and one random spell each from the offensive, defensive and miscellaneous lists (DMG p.39). A roll of 10 lets you choose.' : ''}
+            ${hasClass('Illusionist') ? 'A 1st level illusionist\'s spell book holds three spells rolled on a d12, repeats ignored (DMG p.39).' : ''}</p>
+            <button class="primary" onclick="app.rollSpells()" style="font-size:1.2em;"><i class="fas fa-dice"></i> Roll Starting Spells</button></div>`;
+    }
+    html += renderNav(true, true, !STATE.spellRolls.length || fs.some(e => !e.s));
+    return html;
+}
+
+function renderStep14() {
+    const D = derived(), th = D.thiefSkills;
+    let html = `<h2>Step 14: Thief Abilities</h2><div class="box">
+        <p>Base values for ${hasClass('Assassin') && !hasClass('Thief') ? 'an assassin (thief abilities at two levels below assassin level, PHB p.29)' : 'level 1'}, with racial and Dexterity adjustments applied (PHB p.12, p.28).${hasClass('Monk') ? ' Monk abilities use the thief table at the monk\'s level (PHB p.30); thief adjustments for dexterity and race are not applied.' : ''}</p>`;
+    if (!th) html += `<p><em>A 1st or 2nd level assassin has no thieving abilities yet.</em></p>`;
+    else {
+        html += `<div class="table-responsive"><table><tr><th>Skill</th><th>Base</th><th>Race Adj</th><th>Dex Adj</th><th>Total</th></tr>`;
+        Object.keys(th).filter(k => k[0] !== '_').forEach(k => {
+            const t = th[k];
+            html += `<tr><td>${k}</td><td>${t.total === null ? '-' : t.base + '%'}</td><td>${t.total === null ? '-' : sgn(t.race) + '%'}</td><td>${t.total === null ? '-' : sgn(t.dex) + '%'}</td><td class="roll-result"><strong>${t.total === null ? 'not yet' : t.total + '%'}</strong></td></tr>`;
+        });
+        html += `</table></div>`;
+    }
+    html += `</div>`;
+    html += renderNav(true, true, false);
+    return html;
+}
+
+function renderStep15() {
+    const D = derived(), A = D.abilities;
+    const B = Rules.derive({ race: 'Human', sex: 'm', classes: ['Magic-User'], scores: { str: 10, int: 10, wis: 10, dex: 10, con: 10, cha: 10 } }).abilities;
+    const allLangs = Rules.languageSlots(charFromState()).known.concat(STATE.languages);
+    const sv = D.saves;
+    const lims = Object.entries(D.levelLimits).map(([c, l]) => c + ' ' + (l === Infinity ? 'unlimited' : 'max ' + l)).join(', ');
+    let html = `
+    <div class="flex-between" style="margin-bottom: 20px;"><h2>Step 15: Finalize Character</h2>
+        <div style="display:flex; gap: 5px;"><button class="no-embed" onclick="app.exportTXT()"><i class="fas fa-file-alt"></i> TXT</button><button class="primary no-embed" onclick="app.exportMD()"><i class="fas fa-file-export"></i> MD</button>${EMBED ? '<button class="primary" id="embed-finish" onclick="app.finish()"><i class="fas fa-check"></i> Finish: use this character</button>' : ''}</div></div>
+    <div style="text-align:center; margin-bottom: 20px;"><input type="text" class="name-input" placeholder="Enter Character Name" value="${esc(STATE.name)}" onchange="app.setBasic('name', this.value)"></div>
+    <div class="box"><div class="grid grid-4">
+        <div><strong>Race:</strong> ${STATE.race}${STATE.race === 'Halfling' ? ' (' + STATE.subrace + ')' : ''}</div><div><strong>Class:</strong> ${clsName()}</div><div><strong>Align:</strong> ${STATE.alignment}</div><div><strong>Level:</strong> 1</div>
+        <div><strong>HP:</strong> <span class="roll-result">${STATE.hp}</span></div><div><strong>AC:</strong> <span class="roll-result">${D.ac}</span></div>
+        <div><strong>Age:</strong> ${STATE.age} (${Rules.AGE_NAMES[Math.max(0, Rules.ageCategory(STATE.race, STATE.age))]})</div><div><strong>H/W:</strong> ${fmtHeight(STATE.height)} / ${STATE.weight}lb</div>
+        <div><strong>Wealth:</strong> ${formatCoin(STATE.moneyCP)}</div><div><strong>Move:</strong> ${D.movement.move}"</div>
+    </div><p><small>Level limits: ${lims}</small></p></div>
+    <div class="grid grid-2">
+        <div class="box"><h3>Abilities</h3><div class="table-responsive"><table>
+            <tr><td><strong>STR</strong> <span class="roll-result">${strLabel()}</span></td><td><small>Hit: ${fNum(A.str.hit, B.str.hit)}, Dmg: ${fNum(A.str.dmg, B.str.dmg)}, Wgt: ${fNum(A.str.wgt, B.str.wgt)}</small></td></tr>
+            <tr><td><strong>INT</strong> <span class="roll-result">${A.int.score}</span></td><td><small>Languages: ${langBonus()}${isCaster() ? `, Learn: ${A.int.learnPct}%, Spells: ${A.int.minSpells}-${A.int.maxSpells}` : ''}</small></td></tr>
+            <tr><td><strong>WIS</strong> <span class="roll-result">${A.wis.score}</span></td><td><small>Mag Def: ${fNum(A.wis.magicDef, B.wis.magicDef)}</small></td></tr>
+            <tr><td><strong>DEX</strong> <span class="roll-result">${A.dex.score}</span></td><td><small>Rxn: ${fNum(A.dex.reaction, B.dex.reaction)}, AC Mod: ${fNum(A.dex.defense, B.dex.defense, true)}</small></td></tr>
+            <tr><td><strong>CON</strong> <span class="roll-result">${A.con.score}</span></td><td><small>HP Adj: ${fNum(A.con.hp, B.con.hp)}, Shock: ${A.con.shock}%</small></td></tr>
+            <tr><td><strong>CHA</strong> <span class="roll-result">${A.cha.score}</span></td><td><small>Henchmen: ${fCnt(A.cha.henchmen, B.cha.henchmen)}, Rxn: ${sgn(A.cha.reaction)}%</small></td></tr>
+        </table></div></div>
+        <div>
+            <div class="box"><h3>Saving Throws</h3><p>Death/Poison ${sv.death}, Petrification/Polymorph ${sv.petrification}, Rod/Staff/Wand ${sv.wand}, Breath ${sv.breath}, Spell ${sv.spell}<br><small>${sv.notes.join('. ')}${sv.notes.length ? '. ' : ''}${sv.rule}</small></p></div>
+            <div class="box"><h3>To Hit (d20, need this or more)</h3><div class="table-responsive"><table><tr>${[10, 8, 7, 6, 5, 4, 3, 2, 0, -2].map(a => `<th>AC ${a}</th>`).join('')}</tr><tr>${[10, 8, 7, 6, 5, 4, 3, 2, 0, -2].map(a => `<td>${D.attack[a]}</td>`).join('')}</tr></table></div>
+                <small>Missile: -2 medium range, -5 long. Strength hit ${sgn(D.attackMods.melee)}, dexterity missile ${sgn(D.attackMods.missile)}. Non-proficient weapon: ${D.weaponProf.nonProficiencyPenalty}.</small></div>
+            <div class="box"><h3>Combat & Background</h3>
+                <p><strong>Sec. Skill:</strong> ${esc(STATE.secondarySkill) || 'none'}</p><p><strong>Languages:</strong> ${allLangs.join(', ')}</p>
+                <p><strong>Weapon Proficiencies:</strong> ${STATE.proficiencies.filter(p => p).join(', ')}</p>
+                ${Object.keys(D.spellsPerDay).length ? `<p><strong>Spells per day:</strong> ${Object.entries(D.spellsPerDay).map(([k, v]) => k + ' ' + (v.filter(x => x).length ? v.map((n, i) => n ? 'L' + (i + 1) + ':' + n : '').filter(Boolean).join(' ') : 'none yet')).join('; ')}</p>` : ''}
+                ${STATE.spellRolls.length ? `<p><strong>Spell book:</strong></p><ul style="font-size:0.9em">${finalSpells().filter(e => e.s).map(e => `<li><strong>${esc(e.s)}</strong>: <span class="spell-desc">${esc(SPELL_DESC[e.s] || '')}</span></li>`).join('')}</ul>` : ''}
+                ${D.notes.length ? `<p><small>${D.notes.join('. ')}</small></p>` : ''}</div>
+            <div class="box"><h3>Inventory</h3><ul>${STATE.inventory.map(i => `<li>${i.qty > 1 ? i.qty + 'x ' : ''}${esc(i.n)} ${i.dm ? `<small>[Dmg: ${i.dm}]</small>` : ''} ${i.ac !== undefined && i.ac !== null ? `<small>[AC: ${i.ac}]</small>` : ''}</li>`).join('')}</ul>
+                <p style="margin-top: 10px;"><strong>Total Weight:</strong> ${D.movement.lb.toFixed(1)} lbs, movement ${D.movement.move}"</p></div>
+        </div>
+    </div>
+    <div class="no-embed" style="text-align: center; margin-top: 20px;"><button onclick="app.newCharacter()"><i class="fas fa-redo"></i> Restart Character Creator</button></div>`;
+    if (D.thiefSkills) {
+        html += `<div class="box"><h3>Thief Skills</h3><div class="grid grid-4">${Object.keys(D.thiefSkills).filter(k => k[0] !== '_').map(k => `<div><strong>${k}:</strong> <span class="roll-result">${D.thiefSkills[k].total === null ? '-' : D.thiefSkills[k].total + '%'}</span></div>`).join('')}</div></div>`;
+    }
+    return html;
+}
+
+function renderModal() {
+    if (STATE.historyModalOpen) return renderHistoryModal();
+    if (!STATE.modalItem) return '';
+    const list = STATE.modalItem.type === 'w' ? WEAPONS : STATE.modalItem.type === 'a' ? ARMOR : STATE.modalItem.type === 'b' ? BEASTS : GEAR;
+    const item = list[STATE.modalItem.idx];
+    return `
+        <h3 style="margin-top:0;">Buy ${esc(item.n)}</h3>
+        <p>Cost per unit: <strong>${formatCoin(item.c)}</strong></p><p>How many would you like to buy?</p>
+        <div class="grid grid-4" style="margin-bottom: 15px;">
+            <button onclick="app.updateModalQty(1)">1</button><button onclick="app.updateModalQty(6)">6</button><button onclick="app.updateModalQty(12)">12</button><button onclick="app.updateModalQty(20)">20</button>
+        </div>
+        <div style="margin-bottom: 15px;"><label>Custom Amount:</label><input type="number" id="modal-qty-input" value="${STATE.modalItem.qty}" min="1" onchange="app.updateModalQty(this.value)"></div>
+        <p>Total Cost: <strong class="roll-result">${formatCoin(item.c * STATE.modalItem.qty)}</strong></p>
+        <div class="flex-between"><button onclick="app.closeModal()">Cancel</button>
+            <button onclick="app.confirmBuy()" class="primary" ${STATE.moneyCP < (item.c * STATE.modalItem.qty) ? 'disabled' : ''}>Confirm</button></div>`;
+}
+
+function renderHistoryModal() {
+    const history = getHistory().slice().reverse();
+    let html = `<h2 style="margin-top:0;"><i class="fas fa-history"></i> Saved Characters</h2>`;
+    if (history.length === 0) html += `<p>No characters saved yet. Reach Step 15 to save automatically. Characters saved by earlier versions cannot be loaded.</p>`;
+    else {
+        html += `<div style="max-height: 60vh; overflow-y:auto; margin-bottom: 15px;">`;
+        history.forEach(h => {
+            html += `<div class="history-item"><div><strong>${esc(h.name) || 'Unnamed'}</strong><br><small>${esc(h.race)} ${esc((h.classes || []).join('/'))} - Lvl 1</small></div>
+                <button class="primary" onclick="app.loadHistory('${esc(h.id)}')">Load</button></div>`;
+        });
+        html += `</div>`;
+    }
+    return html + `<div style="text-align:right"><button onclick="app.closeModal()">Close</button></div>`;
+}
+
+// --- APP OBJECT ---
+const app = {};
+Object.assign(app, {
+    async updateState() { await dbWrapper.save(STATE); app.render(); },
+    toggleTheme() { STATE.theme = STATE.theme === 'light' ? 'dark' : 'light'; app.applyTheme(); app.updateState(); },
+    applyTheme() { document.documentElement.dataset.theme = STATE.theme; },
+    resetData() {
+        if (confirm("Erase all character data? This will not erase history.")) { const t = STATE.theme; STATE = getDefaultState(); STATE.theme = t; app.updateState(); }
+    },
+    newCharacter() { const t = STATE.theme; STATE = getDefaultState(); STATE.theme = t; app.updateState(); },
+    setStep(n) { STATE.step = n; if (n === TOTAL_STEPS) saveToHistory(STATE); app.updateState(); },
+
+    nextStep() {
+        let s = STATE.step;
+        const spells = isCaster(), thief = isThiefy();
+        if (s === 12) s = spells ? 13 : thief ? 14 : 15;
+        else if (s === 13) s = thief ? 14 : 15;
+        else if (s === 14) s = 15;
+        else s++;
+        app.setStep(s);
+    },
+    prevStep() {
+        let s = STATE.step;
+        if (s === 15) s = isThiefy() ? 14 : isCaster() ? 13 : 12;
+        else if (s === 14) s = isCaster() ? 13 : 12;
+        else if (s === 13) s = 12;
+        else s--;
+        app.setStep(s);
+    },
+    setBasic(key, val) { STATE[key] = val; app.updateState(); },
+    setSex(v) { STATE.sex = v; app.clearFromRace(); app.updateState(); },
+
+    clearFromRace() {
+        STATE.race = ''; STATE.raceScores = null; STATE.abilities = Object.assign({}, STATE.baseScores); STATE.strExc = 0; STATE.strExcBase = 0; STATE.chaRolled = 0;
+        app.clearFromClass();
+    },
+    clearFromClass() {
+        STATE.classes = []; STATE.hp = 0; STATE.hpDetail = []; STATE.alignment = ''; STATE.age = 0; STATE.ageChanges = []; STATE.height = 0; STATE.weight = 0;
+        STATE.languages = []; STATE.proficiencies = []; STATE.spellRolls = []; STATE.spellChoices = {}; STATE.moneyCP = 0; STATE.inventory = [];
+        if (STATE.raceScores) STATE.abilities = Object.assign({}, STATE.raceScores);
+        STATE.strExc = 0; STATE.strExcBase = 0;
+    },
+
+    rollMethod(m) {
+        const r = Rules.rollAbilities(m);
+        STATE.rollMethod = m; STATE.rolledPool = r.pool || []; STATE.rolledSets = r.sets || [];
+        STATE.baseScores = { str: 0, int: 0, wis: 0, dex: 0, con: 0, cha: 0 };
+        if (m === 3) STATE.baseScores = Object.assign({}, r.scores);
+        STATE.abilities = Object.assign({}, STATE.baseScores);
+        app.updateState();
+    },
+    resetAbilities() {
+        STATE.rollMethod = 0; STATE.rolledPool = []; STATE.rolledSets = [];
+        STATE.baseScores = { str: 0, int: 0, wis: 0, dex: 0, con: 0, cha: 0 };
+        app.clearFromRace(); app.updateState();
+    },
+    assignStat(stat, val) {
+        STATE.baseScores[stat] = Number(val);
+        STATE.abilities = Object.assign({}, STATE.baseScores);
+        app.updateState();
+    },
+    selectSet(index) {
+        STATE.baseScores = Object.assign({}, STATE.rolledSets[index]);
+        STATE.abilities = Object.assign({}, STATE.baseScores);
+        STATE.rolledSets = [];
+        app.setStep(2);
+    },
+    selectRace(r) {
+        const ar = Rules.applyRace(STATE.baseScores, r, STATE.sex);
+        if (!ar.ok) return;
+        STATE.race = r; STATE.raceScores = ar.scores; STATE.chaRolled = STATE.baseScores.cha;
+        STATE.subrace = 'Hairfoot';
+        app.clearFromClass();
+        app.setStep(3);
+    },
+    selectClass(key) {
+        const cl = key.split('/');
+        app.clearFromClass();
+        STATE.classes = cl;
+        STATE.strExcBase = Rules.rollStrExc({ race: STATE.race, sex: STATE.sex, classes: cl, scores: STATE.raceScores });
+        STATE.strExc = STATE.strExcBase;
+        app.setStep(4);
+    },
+    rollHP() {
+        if (!STATE.classes.length) return;
+        const h = Rules.rollHP(charFromState());
+        STATE.hp = h.hp; STATE.hpDetail = h.perDie;
+        app.updateState();
+    },
+    selectAlignment(a) { STATE.alignment = a; app.setStep(6); },
+
+    rollDetail(type) {
+        if (type === 'age') {
+            const ch = charFromState();
+            STATE.age = Rules.rollAge(ch);
+            const ag = Rules.applyAging({ race: STATE.race, sex: STATE.sex, classes: STATE.classes, scores: STATE.raceScores, strExc: STATE.strExcBase, age: STATE.age });
+            STATE.abilities = ag.scores; STATE.strExc = ag.strExc; STATE.ageChanges = ag.changes;
+        } else if (type === 'hw') {
+            const hw = Rules.rollHeightWeight(charFromState());
+            STATE.height = hw.height; STATE.weight = hw.weight;
+            STATE.inventory = STATE.inventory.filter(i => itemReason(i, i._t).ok);
+        } else if (type === 'skill') {
+            STATE.secondarySkill = Rules.rollSecondarySkill();
+        }
+        app.updateState();
+    },
+    toggleLanguage(lang) {
+        const idx = STATE.languages.indexOf(lang), lim = Rules.languageSlots(charFromState()).bonus;
+        if (idx > -1) STATE.languages.splice(idx, 1);
+        else if (STATE.languages.length < lim) STATE.languages.push(lang);
+        app.updateState();
+    },
+    rollGold() {
+        if (!STATE.classes.length) return;
+        STATE.moneyCP = Rules.startingGold(STATE.classes).gp * 200;
+        app.updateState();
+    },
+    initBuy(mode, type, idx) {
+        if (mode === 'b') { STATE.modalItem = { type, idx, qty: 1 }; els.modalLayer.classList.remove('hidden'); app.renderModalContent(); }
+        else app.buyItem(type, idx, 1);
+    },
+    updateModalQty(val) {
+        if (!STATE.modalItem) return;
+        let qty = parseInt(val, 10);
+        if (isNaN(qty) || qty < 1) qty = 1;
+        STATE.modalItem.qty = qty;
+        app.renderModalContent();
+    },
+    renderModalContent() { if (els.modalContent) els.modalContent.innerHTML = renderModal(); },
+    closeModal() { STATE.modalItem = null; STATE.historyModalOpen = false; els.modalLayer.classList.add('hidden'); app.updateState(); },
+    confirmBuy() { if (!STATE.modalItem) return; app.buyItem(STATE.modalItem.type, STATE.modalItem.idx, STATE.modalItem.qty); app.closeModal(); },
+    buyItem(type, idx, qty = 1) {
+        const list = type === 'w' ? WEAPONS : type === 'a' ? ARMOR : type === 'b' ? BEASTS : GEAR;
+        const item = list[idx], total = item.c * qty;
+        if (!itemReason(item, type).ok) return;
+        if (STATE.moneyCP >= total) {
+            STATE.moneyCP -= total;
+            const existing = STATE.inventory.find(i => i.n === item.n && i._t === type);
+            if (existing) existing.qty += qty; else STATE.inventory.push(Object.assign({}, item, { qty, _t: type }));
+            app.updateState();
+        }
+    },
+    sellItem(idx) { const item = STATE.inventory.splice(idx, 1)[0]; STATE.moneyCP += (item.c * item.qty); app.updateState(); },
+    clearInventory() {
+        if (confirm("Sell all items and roll starting gold again?")) { STATE.inventory = []; STATE.moneyCP = 0; app.updateState(); }
+    },
+    setProficiency(idx, val) { STATE.proficiencies[idx] = val; app.updateState(); },
+    rollSpells() { STATE.spellRolls = Rules.rollStartingSpells(STATE.classes); STATE.spellChoices = {}; app.updateState(); },
+    chooseSpell(key, val) { if (val) STATE.spellChoices[key] = val; else delete STATE.spellChoices[key]; app.updateState(); },
+
+    openHistory() { STATE.historyModalOpen = true; els.modalLayer.classList.remove('hidden'); app.renderModalContent(); },
+    loadHistory(id) {
+        const loaded = getHistory().find(h => h.id === id);
+        if (loaded) { STATE = JSON.parse(JSON.stringify(loaded)); STATE.historyModalOpen = false; els.modalLayer.classList.add('hidden'); app.updateState(); }
+    },
+
+    // Embed mode: the finished character as the creator holds it (charFromState plus what it keeps beside it), posted to the parent window.
+    result() {
+        const lv = {}; STATE.classes.forEach(c => { lv[c] = 1; });
+        return Object.assign({}, charFromState(), { name: STATE.name, hp: STATE.hp, levels: lv, secondarySkill: STATE.secondarySkill, spells: finalSpells().filter(e => e.s).map(e => ({ s: e.s, cls: e.cls })), version: VERSION });
+    },
+    finish() { if (EMBED && window.parent !== window) window.parent.postMessage({ type: '1e-wizard-result', character: app.result() }, '*'); },
+    exportTXT() { app.copyToClipboard(app.generateExportString().replace(/[\*#]/g, '').trim(), "Text"); },
+    exportMD() { app.copyToClipboard(app.generateExportString(), "Markdown"); },
+    generateExportString() {
+        const D = derived(), A = D.abilities, sv = D.saves;
+        const allLangs = Rules.languageSlots(charFromState()).known.concat(STATE.languages);
+        let out = `# ${STATE.name || 'Unnamed'}
+**Race:** ${STATE.race} | **Class:** ${clsName()} | **Alignment:** ${STATE.alignment}
+**Level:** 1 | **HP:** ${STATE.hp} | **AC:** ${D.ac} | **Move:** ${D.movement.move}"
+**Age:** ${STATE.age} (${Rules.AGE_NAMES[Math.max(0, Rules.ageCategory(STATE.race, STATE.age))]}) | **Height:** ${fmtHeight(STATE.height)} | **Weight:** ${STATE.weight} lbs
+**Secondary Skill:** ${STATE.secondarySkill || 'none'} | **Wealth:** ${formatCoin(STATE.moneyCP)}
+**Languages:** ${allLangs.join(', ')}
+**Weapon Proficiencies:** ${STATE.proficiencies.filter(p => p).join(', ')}
+**Saves:** Death/Poison ${sv.death}, Petrification/Polymorph ${sv.petrification}, Wand ${sv.wand}, Breath ${sv.breath}, Spell ${sv.spell}
+${STATE.spellRolls.length ? `**Spells:**\n${finalSpells().filter(e => e.s).map(e => `  - ${e.s}: ${SPELL_DESC[e.s] || ''}`).join('\n')}` : ''}
+
+## Abilities
+* **STR ${strLabel()}** (Hit: ${A.str.hit}, Dmg: ${A.str.dmg}, Wgt Adj: ${A.str.wgt})
+* **INT ${A.int.score}** (Extra languages: ${langBonus()}, Learn: ${A.int.learnPct}%, Max Spells: ${A.int.maxSpells})
+* **WIS ${A.wis.score}** (Mag Def: ${A.wis.magicDef})
+* **DEX ${A.dex.score}** (Rxn: ${A.dex.reaction}, AC Mod: ${A.dex.defense})
+* **CON ${A.con.score}** (HP Adj: ${A.con.hp}, Shock: ${A.con.shock}%)
+* **CHA ${A.cha.score}** (Henchmen: ${A.cha.henchmen}, Rxn: ${A.cha.reaction}%)
+
+## Inventory
+${STATE.inventory.map(i => `- ${i.qty > 1 ? i.qty + 'x ' : ''}${i.n} ${i.dm ? `[Dmg: ${i.dm}]` : ''} ${i.ac !== undefined && i.ac !== null ? `[AC: ${i.ac}]` : ''} (${(i.w * i.qty).toFixed(1)} lbs)`).join('\n')}
+*Total Weight: ${D.movement.lb.toFixed(1)} lbs*
+`;
+        if (D.thiefSkills) {
+            out += `\n## Thief Skills\n`;
+            Object.keys(D.thiefSkills).filter(k => k[0] !== '_').forEach(k => { out += `* **${k}:** ${D.thiefSkills[k].total === null ? '-' : D.thiefSkills[k].total + '%'}\n`; });
+        }
+        return out;
+    },
+    copyToClipboard(str, type) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(str).then(() => { alert(`${type} copied to clipboard!`); }).catch(() => { app.fallbackCopy(str, type); });
+        } else app.fallbackCopy(str, type);
+    },
+    fallbackCopy(str, type) {
+        const ta = document.createElement("textarea");
+        ta.value = str; document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); alert(`${type} copied to clipboard!`); } catch (err) { alert("Failed to copy. See console."); console.log(str); }
+        document.body.removeChild(ta);
+    },
+    render() {
+        if (!els.view) return;
+        const fns = [null, renderStep1, renderStep2, renderStep3, renderStep4, renderStep5, renderStep6, renderStep7, renderStep8, renderStep9, renderStep10, renderStep11, renderStep12, renderStep13, renderStep14, renderStep15];
+        els.view.innerHTML = (fns[STATE.step] || renderStep1)();
+        if ((STATE.modalItem || STATE.historyModalOpen) && els.modalLayer) { els.modalLayer.classList.remove('hidden'); app.renderModalContent(); }
+        else if (els.modalLayer) els.modalLayer.classList.add('hidden');
+    }
+});
+
+// --- INIT ---
+async function init() {
+    els.app = document.getElementById('app-container');
+    els.view = document.getElementById('wizard-view');
+    els.modalLayer = document.getElementById('modal-layer');
+    els.modalContent = document.getElementById('modal-content');
+    const saved = await dbWrapper.load();
+    if (saved && saved.ver === VERSION) STATE = saved;
+    else if (saved && saved.theme) STATE.theme = saved.theme; // older saves use a different layout, start fresh
+    if (!STATE.step) STATE.step = 1;
+    // a half-finished character whose state no longer makes sense goes back to step 1
+    if (STATE.step >= 2 && !baseDone()) STATE.step = 1;
+    else if (STATE.step >= 3 && !STATE.race) STATE.step = 2;
+    else if (STATE.step >= 4 && !STATE.classes.length) STATE.step = 3;
+    if (EMBED && EMBED_THEME) STATE.theme = EMBED_THEME;
+    app.applyTheme();
+    app.render();
+}
+init();
+</script>
+</body>
+</html>

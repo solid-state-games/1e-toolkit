@@ -9,6 +9,8 @@ const SheetUI = (function () {
     let mode = "full", canSee = true, item = null, sheet = null, view = null, tab = 0, canWrite = false, status = "", saveTimer = null, saving = false, dirty = false, lastJson = "", root = null, tokenId = "";
     // screen-only state (never stored): pending confirmation, loyalty situation counts and results, tokens in the scene, open loyalty panels, last payment note
     let pending = null, loySit = [], loyRes = {}, loyChk = 0, loyOpen = {}, loyRow = -1, toks = [], toksJson = "", payLoc = 0, payNote = "", rsub = 0, drawer = -1, drawerAnim = false, rulesOpen = {};
+    // creating a character (screen-only): null, or {phase: choose|wizard|random, ok: replace confirmed}. cre = Random PC choices and the rolled preview.
+    let creating = null, cre = { band: "1", method: "1", sheet: null, line: "", err: "" };
 
     /* ---------- boot, load, save ---------- */
     async function start(id) {
@@ -49,8 +51,8 @@ const SheetUI = (function () {
         canSee = TK.role === "GM" || (owner ? owner === TK.me : it.createdUserId === TK.me);
         canWrite = canSee && (TK.role === "GM" || it.createdUserId === TK.me);
         if (!canWrite && (it.metadata || {})[SR.OWNER_KEY] === TK.me) { TK.OBR.player.hasPermission("CHARACTER_UPDATE").then(function (ok) { if (ok && !canWrite) { canWrite = true; paint(); } }); }
-        status = canWrite ? (stored ? "Saved in the token" : "New sheet: saving...") : "Read only: this token is not yours to edit";
-        if (canWrite && !stored) { clearTimeout(saveTimer); saveTimer = setTimeout(save, 0); } // a new sheet is saved at once, not on first edit
+        status = canWrite ? (stored ? "Saved in the token" : "New sheet: choose how to start") : "Read only: this token is not yours to edit";
+        if (canWrite && !stored && !creating) creating = { phase: "choose", ok: true }; // nothing is saved until a way is chosen
     }
     function commit(rerender) {
         sheet = SR.sanitize(sheet); view = SR.compute(sheet); dirty = true;
@@ -71,6 +73,7 @@ const SheetUI = (function () {
         saving = false; dirty = false; updateMeter();
     }
     function updateMeter() {
+        const hs = $("hstatus"); if (hs) { hs.textContent = status.replace(/^Saved in the token at /, "Saved "); hs.classList.toggle("bad", /NOT SAVED/.test(status)); }
         const m = $("meter"); if (!m) return;
         const size = SR.sizeOf(sheet), pct = Math.min(100, Math.round(size / SR.MAX_BYTES * 100));
         m.innerHTML = '<span class="st' + (/NOT SAVED/.test(status) ? " bad" : "") + '">' + esc(status) + '</span><span class="bar" title="Token metadata used: ' + size + ' of 16000 bytes"><i style="width:' + pct + '%" class="' + (size >= SR.WARN_BYTES ? "warn" : "") + '"></i></span><span class="sz">' + size + " / 16000 B</span>";
@@ -101,13 +104,12 @@ const SheetUI = (function () {
                 '<div class="banner">This character belongs to another player. Only that player and the GM can see this sheet.</div></div>';
             return;
         }
+        if (creating && canWrite) { paintCreate(); return; }
         const sy = window.scrollY, ae = document.activeElement, key = ae && ae.dataset && (ae.dataset.f || ae.id), v = view;
         let h = '<div class="sheet"><div class="orn"></div>';
-        h += '<header class="shead"><div><h1>1e Character Sheet</h1><p class="sub">AD&amp;D 1st Edition, rules as written</p></div><div class="sbtns">' +
+        h += '<header class="shead' + (mode === "simple" ? " dense-head" : "") + '"><div><h1>1e Character Sheet</h1>' + (mode === "simple" ? "" : '<p class="sub">AD&amp;D 1st Edition, rules as written</p>') + '</div><div class="sbtns">' +
             '<span class="vsw" role="group" aria-label="Sheet view"><button type="button" class="btn ' + (mode === "simple" ? "" : "ghost") + '" data-act="vw" data-v="simple" aria-pressed="' + (mode === "simple") + '">Simple</button><button type="button" class="btn ' + (mode === "full" ? "" : "ghost") + '" data-act="vw" data-v="full" aria-pressed="' + (mode === "full") + '">Full</button></span>' +
-            (canWrite ? '<button type="button" class="btn" data-act="savenow" title="Changes also save by themselves half a second after you stop typing">Save</button>' : "") +
-            '<button type="button" class="btn ghost" data-act="export">Export JSON</button><button type="button" class="btn ghost" data-act="copyjson">Copy JSON</button>' +
-            (canWrite ? '<button type="button" class="btn ghost" data-act="import">Import JSON</button>' : "") + '' + tkViewControls() + '<button type="button" class="btn ghost themebtn" onclick="tkToggleTheme()">Light / Dark</button><button type="button" class="btn" data-act="close">Close</button></div></header>';
+            '<span class="hstatus" id="hstatus" role="status"></span>' + tkGear(canWrite ? "sheet" : "sheetro") + '<button type="button" class="btn" data-act="close">Close</button></div></header>';
         if (!canWrite) h += '<div class="banner">Read only. You can look at this sheet, and export it. Saving needs the GM to hand you the token (Characters tab, Assign) or allow character updates for players in the room settings.</div>';
         if (v.errors.length) h += '<div class="banner bad">' + v.errors.map(esc).join("<br>") + "</div>";
         else if (v.warns.length) h += '<div class="banner warn">' + v.warns.map(esc).join("<br>") + "</div>";
@@ -120,6 +122,67 @@ const SheetUI = (function () {
         updateMeter(); window.scrollTo(0, sy);
         restoreFocus(key);
     }
+
+    /* ---------- making a character: Blank / Wizard / Random PC ---------- */
+    const hadSheet = function () { return lastJson !== "null"; };
+    const METHODS = [["1", "I: 4d6, drop the lowest, arrange"], ["2", "II: best six of twelve 3d6"], ["3", "III: best of six 3d6 for each"], ["4", "IV: best of twelve characters"]];
+    const BANDS = [["1", "Level 1"], ["2-4", "Levels 2 to 4"], ["5-8", "Levels 5 to 8"], ["9-12", "Levels 9 to 12"]];
+    function rollRandom() {
+        cre.err = "";
+        try {
+            const b = cre.band.split("-").map(Number), lvl = b.length > 1 ? QPRules.rr(b[0], b[1]) : b[0];
+            const rec = QPRules.genPCParty({ count: 1, levelRange: lvl, method: Number(cre.method), alignMode: "any" }).chars[0];
+            cre.sheet = SR.fromQuickParty(rec, item.name || ""); cre.line = SR.previewLine(cre.sheet);
+        } catch (e) { cre.sheet = null; cre.err = "Could not roll a character: " + e.message; }
+    }
+    function themeName() { const r = document.documentElement; return r.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); }
+    function paintCreate() {
+        const c = creating;
+        let h = '<div class="sheet create"><div class="orn"></div><header class="shead"><div><h1>1e Character Sheet</h1><p class="sub">New character for ' + esc(item.name || "this token") + '</p></div><div class="sbtns">' +
+            tkGear("hub") + (hadSheet() ? '<button type="button" class="btn ghost" data-act="mk-cancel">Cancel</button>' : "") + '<button type="button" class="btn" data-act="close">Close</button></div></header>';
+        if (cre.err) h += '<div class="banner bad">' + esc(cre.err) + "</div>";
+        if (hadSheet() && !c.ok) {
+            h += '<div class="banner confirm">This token already has a sheet (' + esc(sheet.nm || "unnamed") + ", " + esc(sheet.cl.join("/")) + " " + esc(sheet.lv.join("/")) + "). A new character replaces it.<button type=\"button\" class=\"btn\" data-act=\"mk-ok\">Replace it</button><button type=\"button\" class=\"btn ghost\" data-act=\"mk-cancel\">Keep it</button></div>";
+        } else if (c.phase === "choose") {
+            const card = function (act, t, p) { return '<div class="mkcard"><h3>' + t + "</h3><p>" + p + '</p><button type="button" class="btn" data-act="' + act + '">' + t + "</button></div>"; };
+            h += '<div class="mkgrid">' + card("mk-blank", "Blank sheet", "Start empty and fill it in yourself.") + card("mk-wizard", "Wizard", "Step by step: roll abilities, then race, class, kit and spells (the 1e Character Creator).") +
+                card("mk-random", "Random PC", "A quick, legal character from the Quick Party generator. Preview it first.") + "</div>";
+        } else if (c.phase === "wizard") {
+            h += '<div class="mkbar"><button type="button" class="btn ghost" data-act="mk-back">Back</button><span class="hint">Finish on the last step sends the character to this sheet.</span></div>' +
+                '<iframe id="wizframe" class="wizframe" title="1e Character Creator" src="wizard/index.html?embed=1&theme=' + themeName() + '"></iframe>';
+        } else if (c.phase === "random") {
+            const o = function (list, cur) { return list.map(function (x) { return '<option value="' + x[0] + '"' + (x[0] === cur ? " selected" : "") + ">" + esc(x[1]) + "</option>"; }).join(""); };
+            h += '<section class="box"><h3>Random PC</h3><div class="mkbar"><label>Level <select data-cre="band">' + o(BANDS, cre.band) + '</select></label><label>Ability method (DMG p.11) <select data-cre="method">' + o(METHODS, cre.method) + "</select></label></div>" +
+                '<p class="preview" id="rpreview">' + (cre.sheet ? esc(cre.line) : "") + '</p><div class="mkbar"><button type="button" class="btn ghost" data-act="mk-reroll">Re-roll</button><button type="button" class="btn" data-act="mk-use"' + (cre.sheet ? "" : " disabled") + '>Use this character</button><button type="button" class="btn ghost" data-act="mk-back">Back</button></div>' +
+                '<p class="hint">Made from the Quick Party tables (PHB p.9-37, DMG p.11, Appendix P). Spells, gear and magic items come with it; check the Notes page afterwards.</p></section>';
+        }
+        h += '<div class="orn"></div><footer class="sfoot"><div class="credit">' + esc(CREDIT) + "</div></footer></div>";
+        root.innerHTML = h; window.scrollTo(0, 0);
+    }
+    function createAct(act) {
+        if (act === "newchar") { creating = { phase: "choose", ok: false }; cre.err = ""; }
+        else if (!creating) return;
+        else if (act === "mk-cancel") creating = null;
+        else if (act === "mk-ok") creating.ok = true;
+        else if (act === "mk-back") { creating.phase = "choose"; cre.err = ""; }
+        else if (act === "mk-blank") { adopt(SR.sanitize(Object.assign(SR.blank(), { nm: item.name || "" })), "Blank sheet"); return; }
+        else if (act === "mk-wizard") { creating.phase = "wizard"; cre.err = ""; }
+        else if (act === "mk-random") { creating.phase = "random"; rollRandom(); }
+        else if (act === "mk-reroll") rollRandom();
+        else if (act === "mk-use") { if (cre.sheet) { adopt(cre.sheet, "Random PC"); return; } }
+        paint();
+    }
+    async function adopt(s, how) {
+        if (SR.sizeOf(s) >= SR.MAX_BYTES) { cre.err = "That character is too large for token metadata (" + SR.sizeOf(s) + " bytes)."; paint(); return; }
+        sheet = s; view = SR.compute(sheet); creating = null; tab = 0; pending = null; drawer = -1; cre.err = ""; dirty = true; status = "Saving...";
+        clearTimeout(saveTimer); paint(); await save(); paint(); say(how + " saved to the token.", "SUCCESS");
+    }
+    window.addEventListener("message", function (e) {
+        if (TK.view !== "sheet" || !creating || creating.phase !== "wizard" || e.origin !== location.origin) return;
+        const fr = $("wizframe"), d = e.data;
+        if (!fr || e.source !== fr.contentWindow || !d || d.type !== "1e-wizard-result" || !d.character) return;
+        adopt(SR.fromCreator(d.character, item.name || ""), "Wizard character");
+    });
     function restoreFocus(key) {
         if (key) setTimeout(function () { const e = document.querySelector('[data-f="' + key + '"]') || document.getElementById(key); if (e && e !== document.activeElement) { e.focus(); try { if (e.setSelectionRange && e.type === "text") e.setSelectionRange(e.value.length, e.value.length); } catch (x) { /* ignore */ } } }, 0);
     }
@@ -502,6 +565,7 @@ const SheetUI = (function () {
     /* ---------- events ---------- */
     function onChange(e) {
         const el = e.target;
+        if (el.dataset.cre && creating) { cre[el.dataset.cre] = el.value; rollRandom(); paint(); return; }
         if (el.dataset.f && canWrite) {
             const t = el.dataset.t; let v = el.value;
             if (t === "n") { v = Number(v); if (isNaN(v)) v = 0; }
@@ -535,6 +599,7 @@ const SheetUI = (function () {
         if (act === "rsub") { rsub = i; pending = null; drawer = -1; paint(); return; }
         if (act === "hn-edit") { drawer = i; drawerAnim = true; paint(); return; }
         if (act === "hn-close") { drawer = -1; paint(); return; }
+        if (act.indexOf("mk-") === 0 || act === "newchar") { if (canWrite) createAct(act); return; }
         if (act === "close") { TK.OBR.modal.close(SR.NS + "/sheet"); return; }
         if (act === "savenow") { clearTimeout(saveTimer); status = "Saving..."; updateMeter(); save(); return; }
         if (act === "export") { exportFile(); return; }

@@ -459,9 +459,106 @@ function compute(sheet) {
     return out;
 }
 
+/* ---------- new sheets from the Character Creator wizard and from Quick Party (TB 2026-11-12) ----------
+ * Both converters return a sanitised sheet. Anything the sheet cannot hold goes into the notes (nt), never dropped.
+ * Money: PHB p.35 (200 cp = 1 gp, 20 sp = 1 gp). Armour and weapon names: rules_1e EQUIPMENT. */
+const QP_ALIGN = { 'Lawful Good': 'LG', 'Neutral Good': 'NG', 'Chaotic Good': 'CG', 'Lawful Neutral': 'LN', 'True Neutral': 'N', 'Chaotic Neutral': 'CN', 'Lawful Evil': 'LE', 'Neutral Evil': 'NE', 'Chaotic Evil': 'CE' };
+// Quick Party equipment names to rules_1e price-list names
+const QP_BASE = { 'Plate Mail': 'Plate', 'Banded Mail': 'Banded', 'Splint Mail': 'Splinted', 'Chain Mail': 'Chain', 'Scale Mail': 'Scale', 'Studded Leather': 'Studded', 'Ring Mail': 'Ring',
+    'Leather Armor': 'Leather', 'Padded Armor': 'Padded', 'Shield': 'Shield, small', 'Long Sword': 'Sword, Long & scabbard', 'Dagger': 'Dagger and scabbard', 'Mace': "Mace, footman's",
+    'Scimitar': 'Scimitar', 'Staff': 'Staff, Quarter', "Thieves' Picks & Tools": "Thieves' picks & tools", 'Spear': 'Spear', 'Battle Axe': 'Axe, battle', 'Long Bow': 'Bow, long', 'Javelin': 'Javelin' };
+const QP_SPELL_CLASS = { 'MU': 'Magic-User', 'Ill': 'Illusionist', 'Druidic': 'Ranger (druidic)', 'Ranger MU': 'Ranger (magic-user)' };
+const raceKey = r => Object.keys(Rules.RACES).filter(k => k.toLowerCase() === String(r).toLowerCase())[0] || 'Human';
+function coinsFromCP(cp) {
+    cp = Math.max(0, Math.floor(Number(cp) || 0));
+    const gp = Math.floor(cp / 200), rem = cp - gp * 200, sp = Math.floor(rem / 10);
+    return [0, gp, 0, sp, rem - sp * 10];
+}
+function feetInches(h) { h = Number(h) || 0; const f = Math.floor(h / 12), i = h - f * 12; return h ? f + "'" + (i % 1 ? i.toFixed(1) : i) + '"' : ''; }
+// weapons the character carries, as price-list names, limited to the class's initial slots (PHB p.34), for the proficiency list
+function carriedProfs(s, names) {
+    const ok = proficiencyChoices(s), slots = Math.max.apply(null, s.cl.map(c => Rules.CLASSES[c].profs));
+    return names.filter((n, i) => names.indexOf(n) === i && ok.indexOf(n) >= 0).slice(0, slots);
+}
+// Quick Party equipment strings to inventory rows. Plain kit becomes price-list rows; magic and odd items become named rows (armour keeps its weight and AC).
+function qpInventory(equipment) {
+    const inv = [], weapons = [], magic = [], idx = eqIndex();
+    const add = (n, q) => { const e = inv.filter(r => r.length === 2 && r[0] === n)[0]; if (e) e[1] += q; else inv.push([n, q]); };
+    equipment.forEach(item => {
+        if (item === 'Long Bow & Arrows') { add('Bow, long', 1); add('Arrow, normal (12)', 2); weapons.push('Bow, long'); return; }
+        if (QP_BASE[item] && idx[QP_BASE[item]]) { add(QP_BASE[item], 1); if (idx[QP_BASE[item]].kind) weapons.push(QP_BASE[item]); return; }
+        magic.push(item);
+        const m = /^(.+?) \+(\d)$/.exec(item), base = m && QP_BASE[m[1]] ? idx[QP_BASE[m[1]]] : null;
+        if (base && base.ac !== undefined && base.ac !== null) inv.push([item, 1, base.w || 0, base.shield ? base.ac : base.ac - Number(m[2])]);
+        else if (base) { inv.push([item, 1, base.w || 0]); if (base.kind) weapons.push(base.n); }
+        else inv.push([item, 1, 0]);
+    });
+    return { inv, weapons, magic };
+}
+// Quick Party spell lines ("<b>MU L1 (4):</b> memorised<br><span>Book: known</span>") to sk (known) and sm (memorised), by sheet class name and level
+function qpSpells(text, classes) {
+    const sk = {}, sm = {}, left = [], re = /<b>([^<]*?) L(\d+) \((\d+)\):<\/b> ([^<]*)(?:<br><span[^>]*>Book: ([^<]*)<\/span>)?/g;
+    let m, any = false;
+    while ((m = re.exec(text || ''))) {
+        any = true;
+        const cls = m[1] === 'Prayers' ? ['Cleric', 'Druid', 'Paladin'].filter(c => classes.indexOf(c) >= 0)[0] : QP_SPELL_CLASS[m[1]];
+        const lv = Number(m[2]) - 1, mem = m[4].split(', ').filter(Boolean), known = m[5] ? m[5].split(', ').filter(Boolean) : mem.filter((x, i) => mem.indexOf(x) === i);
+        if (!cls || lv < 0 || lv > 9) { left.push(m[0].replace(/<[^>]*>/g, ' ')); continue; }
+        [[sk, known], [sm, mem]].forEach(p => { if (!p[0][cls]) p[0][cls] = []; while (p[0][cls].length <= lv) p[0][cls].push([]); p[0][cls][lv] = p[1]; });
+    }
+    if (!any && text) left.push(String(text).replace(/<[^>]*>/g, ' '));
+    return { sk, sm, left };
+}
+function fitNotes(lines) { const t = lines.filter(Boolean).join('\n'); return t.length <= LIM.text ? t : t.slice(0, LIM.text - 12).replace(/[;,]?[^;,\n]*$/, '') + ' [cut short]'; }
+
+// A Quick Party record (QPRules.genPCParty(...).chars[i], or buildRecord) to a sheet.
+function fromQuickParty(pc, tokenName) {
+    const s = blank(), cl = pc.classes.filter(c => Rules.CLASSES[c]);
+    s.nm = str(tokenName, LIM.name); s.race = raceKey(pc.race); s.sex = /^f/i.test(pc.gender) ? 'f' : 'm';
+    s.cl = cl.slice(0, 3); s.lv = cl.slice(0, 3).map((c, i) => pc.levels[i]);
+    s.sc = ABIL.map(a => pc.stats[a]); s.ex = pc.stats.strX || 0;
+    s.al = QP_ALIGN[pc.align] || 'N'; s.xp = pc.xp; s.hp = s.hm = pc.hp;
+    const it = qpInventory(pc.equipment || []); s.inv = it.inv;
+    const sp = qpSpells(pc.spells, cl); s.sk = sp.sk; s.sm = sp.sm;
+    s.pf = carriedProfs(sanitize(s), it.weapons);
+    s.nt = fitNotes(['Made by the Random PC button (Quick Party generator, DMG Appendix P).', pc.titles ? 'Title: ' + pc.titles + '.' : '', 'Generator armour class: ' + pc.ac + ' (this sheet works out its own from what is carried).',
+        it.magic.length ? 'Magic and other items, in full (effects are not worked out on this sheet): ' + it.magic.join('; ') + '.' : '', sp.left.length ? 'Spells the sheet could not place: ' + sp.left.join(' ') : '']);
+    return sanitize(s);
+}
+
+// The wizard's finished character (1e_CHARACTER_CREATOR charFromState plus name, hp, levels, secondarySkill, spells) to a sheet.
+function fromCreator(c, tokenName) {
+    c = c || {};
+    const s = blank(), cl = (c.classes || []).filter(k => Rules.CLASSES[k]).slice(0, 3);
+    s.nm = str(c.name || tokenName, LIM.name); s.race = Rules.RACES[c.race] ? c.race : 'Human'; s.sub = c.subrace || ''; s.sex = c.sex === 'f' ? 'f' : 'm';
+    s.cl = cl.length ? cl : ['Fighter']; s.lv = s.cl.map(k => (c.levels && c.levels[k]) || 1);
+    const sc = c.scores || {}; s.sc = ABIL.map(a => sc[a] || 10); s.ex = c.strExc || 0; s.al = c.alignment;
+    s.hp = s.hm = c.hp || 0; s.hl = c.hp ? [c.hp] : [];
+    s.pf = (c.proficiencies || []).filter(Boolean);
+    const idx = eqIndex();
+    s.inv = (c.inventory || []).filter(i => i && i.n).map(i => {
+        const q = Math.max(1, i.qty || 1);
+        if (idx[i.n]) return [i.n, q];
+        const r = [i.n, q, i.w || 0]; if (i.ac !== undefined && i.ac !== null) r.push(i.ac); return r;
+    });
+    s.co = coinsFromCP(c.coinsCP);
+    s.lg = (c.languages || []).filter(Boolean);
+    s.d.sx = c.age ? String(c.age) : ''; s.d.ht = feetInches(c.height); s.d.wt = c.weight ? c.weight + ' lb' : '';
+    (c.spells || []).forEach(e => { if (!e || !e.s || !Rules.CLASSES[e.cls]) return; const k = e.cls; if (!s.sk[k]) s.sk[k] = [[]]; s.sk[k][0].push(e.s); });
+    s.nt = fitNotes(['Made with the Character Creator wizard' + (c.version ? ' v' + c.version : '') + '.', c.secondarySkill ? 'Secondary skill: ' + c.secondarySkill + '.' : '',
+        c.chaRolled && c.chaRolled !== sc.cha ? 'Charisma as rolled: ' + c.chaRolled + ' (final ' + sc.cha + ').' : '', (c.spells || []).length ? 'Starting spell book is under Spells, Known. Nothing is memorised yet.' : '']);
+    return sanitize(s);
+}
+// One line for the Random PC preview: race, class, level, key scores, hp and AC.
+function previewLine(sheet) {
+    const s = sanitize(sheet), v = compute(s), n = ['Str', 'Int', 'Wis', 'Dex', 'Con', 'Cha'];
+    const sc = s.sc.map((x, i) => n[i] + ' ' + (i === 0 && s.ex ? x + '/' + (s.ex === 100 ? '00' : String(s.ex).padStart(2, '0')) : x)).join(' ');
+    return s.race + ' ' + s.cl.join('/') + ', level ' + s.lv.join('/') + ' (' + s.al + '). ' + sc + '. HP ' + s.hm + (v.d ? ', AC ' + v.d.ac : '') + '.';
+}
+
 const api = { CAST_BITS, VIEW_KEY, ammoLines, adjustAmmo, isCast, toggleCast, restSpells, filterMem, defaultSheetView, NS, KEY, OWNER_KEY, FORMAT, MAX_BYTES, WARN_BYTES, LIM, SPELL_KEY, COIN_NAMES, COIN_GP, ABIL, RACE_TRAITS,
     blank, sanitize, pack, SOLDIERS, EXPERTS, SOLDIER_PAY_PAGE, SERJEANT_MULT, LOY_BASE, LOY_CATS, LOY_ALIGN, LOY_ALIGN_ROWS, LOY_SPECIAL, LOY_PENALTY, LOY_BONUS, LOY_SITUATION, LOY_BANDS, LOY_CHECKS, HENCH_MAINT, H, blankHench,
-    command, directCap, assassinRule, MERC_CAP_BY_CLASS, MERC_CAP_OTHER, entryParts, locOf, hydrateRow, moveItem, removePlace, placeCounts, coinsAt, setCoinsAt, purseGp, payFrom, loyalty, loyaltyCheck, bandOf, soldierCost, expertCost, hireLine, retainers, bytes, sizeOf, exportText, parseImport, toChar, hydrate, combatRows, proficiencyChoices, weaponLine, movementTable, compute, coinGp, coinPieces };
+    command, directCap, assassinRule, MERC_CAP_BY_CLASS, MERC_CAP_OTHER, entryParts, locOf, hydrateRow, moveItem, removePlace, placeCounts, coinsAt, setCoinsAt, purseGp, payFrom, loyalty, loyaltyCheck, bandOf, soldierCost, expertCost, hireLine, retainers, bytes, sizeOf, exportText, parseImport, toChar, hydrate, combatRows, proficiencyChoices, weaponLine, movementTable, compute, coinGp, coinPieces, fromCreator, fromQuickParty, previewLine, coinsFromCP, qpSpells };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 root.SheetRules = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

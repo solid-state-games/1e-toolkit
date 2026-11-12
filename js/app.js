@@ -59,7 +59,7 @@ const Hub = (function () {
     }
     function shell() {
         const tabs = [["sheets", "Characters"]].concat(TK.role === "GM" ? GM_TABS : []).concat([["guide", "Guide"]]);
-        let h = '<header class="hubhead"><h1>1e Character Sheet</h1><span><span class="rolebadge">' + (TK.role === "GM" ? "GM" : "Player") + '</span>' + tkViewControls() + '<button type="button" class="btn ghost small themebtn" onclick="tkToggleTheme()">Light / Dark</button></span></header>';
+        let h = '<header class="hubhead"><h1>1e Character Sheet</h1><span><span class="rolebadge">' + (TK.role === "GM" ? "GM" : "Player") + '</span>' + tkGear("hub") + '</span></header>';
         h += '<nav class="tabs" role="tablist">' + tabs.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '">' + t[1] + "</button>"; }).join("") + "</nav>";
         h += '<section id="sheets" class="pane"></section>';
         if (TK.role === "GM") h += '<section id="enc" class="pane"></section><section id="tre" class="pane"></section><section id="com" class="pane"></section>';
@@ -353,3 +353,33 @@ function tkViewControls() {
     return '<select class="viewsel" title="Text size" onchange="tkSetView(\'size\', this.value)">' + opt("s", "Text S", z) + opt("m", "Text M", z) + opt("l", "Text L", z) + "</select>" +
         '<select class="viewsel" title="Spacing" onchange="tkSetView(\'density\', this.value)">' + opt("compact", "Compact", d) + opt("default", "Default", d) + opt("comfortable", "Comfortable", d) + "</select>";
 }
+
+
+/* settings dialog: a gear button opens a small panel (Text size, Spacing, Light / Dark, and on the sheet the save and file actions). Esc or a click outside closes it. */
+function tkGear(kind) {
+    return '<button type="button" class="btn ghost gear" data-gear="' + kind + '" aria-label="Settings" aria-haspopup="dialog" title="Settings"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg></button>';
+}
+let tkGearBtn = null;
+function tkCloseSettings() { const o = document.getElementById("setov"); if (o) o.remove(); if (tkGearBtn && document.contains(tkGearBtn)) tkGearBtn.focus(); }
+function tkOpenSettings(kind, from) {
+    tkCloseSettings(); tkGearBtn = from || null;
+    const r = document.documentElement, z = r.dataset.size || "m", d = r.dataset.density || "default";
+    const opt = function (v, l, cur) { return '<option value="' + v + '"' + (v === cur ? " selected" : "") + ">" + l + "</option>"; };
+    let h = '<div class="setov" id="setov"><div class="setpanel" role="dialog" aria-modal="true" aria-label="Settings"><div class="sethead"><b>Settings</b><button type="button" class="btn ghost small" data-setclose="1">Close</button></div>' +
+        '<label class="setrow">Text size <select id="set-size">' + opt("s", "Small", z) + opt("m", "Medium", z) + opt("l", "Large", z) + "</select></label>" +
+        '<label class="setrow">Spacing <select id="set-density">' + opt("compact", "Compact", d) + opt("default", "Default", d) + opt("comfortable", "Comfortable", d) + "</select></label>" +
+        '<div class="setrow">Theme <button type="button" class="btn ghost" id="set-theme">Light / Dark</button></div>';
+    if (kind === "sheet" || kind === "sheetro") {
+        h += '<div class="setacts">' + (kind === "sheet" ? '<button type="button" class="btn" data-act="savenow">Save now</button>' : "") + '<button type="button" class="btn ghost" data-act="export">Export JSON</button><button type="button" class="btn ghost" data-act="copyjson">Copy JSON</button>' +
+            (kind === "sheet" ? '<button type="button" class="btn ghost" data-act="import">Import JSON</button><button type="button" class="btn ghost" data-act="newchar" title="Start a new character on this token (asks first)">New character</button>' : "") + "</div>";
+    }
+    document.body.insertAdjacentHTML("beforeend", h + "</div></div>");
+    const o = document.getElementById("setov");
+    o.addEventListener("click", function (e) { if (e.target === o || e.target.closest("[data-setclose]")) tkCloseSettings(); else if (e.target.closest("[data-act]")) setTimeout(tkCloseSettings, 0); });
+    document.getElementById("set-size").onchange = function () { tkSetView("size", this.value); };
+    document.getElementById("set-density").onchange = function () { tkSetView("density", this.value); };
+    document.getElementById("set-theme").onclick = tkToggleTheme;
+    document.getElementById("set-size").focus();
+}
+document.addEventListener("click", function (e) { const g = e.target.closest("[data-gear]"); if (g) tkOpenSettings(g.dataset.gear, g); });
+document.addEventListener("keydown", function (e) { if (e.key === "Escape" && document.getElementById("setov")) { e.stopPropagation(); tkCloseSettings(); } });
