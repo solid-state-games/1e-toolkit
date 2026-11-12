@@ -127,7 +127,7 @@ check('(c) 1000 combat lookups and weaponless rolls (pummel, grapple, overbear) 
 const mf = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
 const need = ['name', 'version', 'manifest_version', 'action'];
 const mfOk = need.every(k => mf[k] !== undefined) && mf.manifest_version === 1 && mf.action.title && mf.action.icon && mf.action.popover &&
-    /^\d+\.\d+\.\d+$/.test(mf.version) && mf.background_url && fs.existsSync(path.join(root, mf.action.popover.replace(/^\//, ''))) && fs.existsSync(path.join(root, mf.background_url.replace(/^\//, ''))) && fs.existsSync(path.join(root, mf.icon.replace(/^\//, '')));
+    /^\d+\.\d+\.\d+$/.test(mf.version) && mf.background_url && fs.existsSync(path.join(root, mf.action.popover.replace(/^https:\/\/solid-state-games\.github\.io\/1e-toolkit\//, '').replace(/^\//, ''))) && fs.existsSync(path.join(root, mf.background_url.replace(/^https:\/\/solid-state-games\.github\.io\/1e-toolkit\//, '').replace(/^\//, ''))) && fs.existsSync(path.join(root, mf.icon.replace(/^https:\/\/solid-state-games\.github\.io\/1e-toolkit\//, '').replace(/^\//, '')));
 check('(d) manifest.json has the fields the OBR docs require and its files exist', !!mfOk);
 check('(d) background.js uses the same metadata namespace as SheetRules', fs.readFileSync(path.join(root, 'js/background.js'), 'utf8').includes('"' + SR.NS + '"'));
 check('(d) vendored SDK and its licence are present', fs.existsSync(path.join(root, 'vendor/obr-sdk.js')) && /MIT/.test(fs.readFileSync(path.join(root, 'vendor/OBR-SDK-LICENSE.txt'), 'utf8')) && /3\.1\.0/.test(fs.readFileSync(path.join(root, 'vendor/README.md'), 'utf8')));
