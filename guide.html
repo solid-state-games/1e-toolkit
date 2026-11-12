@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>1e Character Sheet: setup guide</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=IM+Fell+English+SC&family=Special+Elite&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/toolkit.css">
+<style>body{background:#d9c89b}main{max-width:780px;margin:1em auto;background:var(--paper);border:3px double var(--rule);padding:.5em 1.6em 1em}code,pre{font-family:var(--type);font-size:13px;background:#fffaf0;padding:0 .3em}pre{padding:.5em;overflow:auto}h2{margin-top:1.2em;border-bottom:1px solid var(--rule)}li{margin:.25em 0}</style>
+</head>
+<body>
+<main>
+<div class="orn"></div>
+<h1>1e Character Sheet: setup guide</h1>
+<p>An Owlbear Rodeo extension for AD&amp;D 1st Edition: a character sheet for players, and Encounters, Treasure and Combat tools for the GM. All rules follow the 1e books as written.</p>
+
+<h2>1. Install</h2>
+<ol>
+<li>In Owlbear Rodeo, open your profile menu and choose <b>Extensions</b>.</li>
+<li>Choose <b>Add Custom Extension</b> and paste the manifest URL:<pre>https://solid-state-games.github.io/1e-toolkit/manifest.json</pre></li>
+<li>Press <b>Add</b>. The extension is now in your account. Only the person who adds it has to do this.</li>
+</ol>
+
+<h2>2. Add it to a room</h2>
+<ol>
+<li>Open your room, then the room's <b>Extensions</b> list.</li>
+<li>Switch on <b>1e Character Sheet</b>. Everyone in the room gets the toolkit icon in the top bar and the right-click item <b>Open 1e sheet</b> on character tokens.</li>
+</ol>
+
+<h2>3. Players: link your token to a sheet</h2>
+<ol>
+<li>Put your token on the <b>Character</b> layer (right-click, then the layer button, or drag it from the Character library).</li>
+<li>Right-click the token and choose <b>Open 1e sheet</b>. Or open the toolkit icon, find your token under <b>Characters</b>, and press <b>Create</b> or <b>Open</b>.</li>
+<li>Fill in the sheet. It saves by itself into the token (the bar at the bottom shows how much of the 16 kB token allowance it uses). The sheet <i>is</i> the link: there is nothing else to connect.</li>
+<li>To start from a saved character, press <b>Import JSON</b> on the sheet and pick the file.</li>
+</ol>
+<p>The sheet has seven pages: Abilities, Combat, Skills and look, Equipment, Spells, Notes, Retainers. Enter scores (final scores, after race and age), race, class, levels, gear and the rest. Every table figure is worked out for you from the books and shown with its page.</p>
+
+<p><b>Left behind, and followers.</b> On the Equipment page, add Places (a room at an inn, a stronghold vault, a bank), then move any item to a place with its "Move to" box; coins can be kept per place too. Only what you carry counts toward load, movement and armour class. The Retainers page (sub-tabs Henchmen, Hirelings, Costs; a side drawer holds each henchman) lists henchmen (maximum from Charisma, loyalty from the DMG tables for the GM only, with a Check loyalty button, an optional linked token with its own sheet) and hirelings (soldiers and experts with the DMG monthly costs), totals the monthly cost and has a Pay a month button that takes the coins from a place you choose. All of it stays private to the sheet's owner and the GM.</p>
+
+<h2>4. GM view</h2>
+<ul>
+<li>The toolkit icon shows extra tabs only to the GM: <b>Encounters</b> (terrain, density, modes, bell or linear dice, roll a day or one encounter, with evade and morale buttons), <b>Treasure</b> (types A to Z, individuals, lair multiplier, hoards, DM and player view) and <b>Combat</b> (to-hit lookup, weapon against armour, pummel, grapple, overbear). Players never see these tabs.</li>
+<li>The <b>Characters</b> tab lists every character token. You can open, import or export any sheet, and <b>Assign</b> a token to a player.</li>
+</ul>
+
+<h2>Who can edit what</h2>
+<ul>
+<li>The <b>GM</b> can open and edit every sheet.</li>
+<li>A <b>player</b> can open, and save, the sheets of tokens they created. Owlbear only lets players change items they created, unless the room allows players to update characters.</li>
+<li><b>Assign</b> (GM, Characters tab) marks a token as that player's and tries to hand the token to them, so they can save. If Owlbear refuses the hand-over, the player can still open the sheet but it is read only; either allow character updates for players in the room permissions, or let the player build the sheet on their own token.</li>
+<li>A player who opens a sheet they cannot save sees a Read only banner. They can still export it.</li>
+</ul>
+
+<h2>5. Moving a character between rooms</h2>
+<p>Sheets live in the token, so they stay in the room. To move a character:</p>
+<ol>
+<li>In the old room open the sheet and press <b>Export JSON</b>. A <code>.1e-sheet.json</code> file downloads.</li>
+<li>In the new room, make a token on the Character layer, open its sheet and press <b>Import JSON</b>. (The GM can also use <b>Import</b> beside the token in the Characters tab.)</li>
+</ol>
+<p>The same file is a backup. Keep one.</p>
+
+<h2>Troubleshooting</h2>
+<ul>
+<li><b>No "Open 1e sheet" in the right-click menu.</b> The token must be on the Character layer, and only one token selected. Check the extension is switched on for the room.</li>
+<li><b>"Read only" banner.</b> You are not the token's creator and the GM has not handed it to you. See "Who can edit what".</li>
+<li><b>"NOT SAVED: over the 16 kB limit".</b> Shorten the notes, or trim gear and spell lists. A typical sheet uses about 1 to 3 kB; a sheet with every cap reached is about 15.6 kB (10 places, 15 henchmen, 20 hireling lines).</li>
+<li><b>The sheet is blank after I copied a token.</b> Copies of a token keep their metadata, so a copy carries the sheet. If you made the token fresh, press Import.</li>
+<li><b>Fonts look plain.</b> The sheet uses Google Fonts; offline it falls back to system serif and typewriter fonts. Nothing is lost.</li>
+<li><b>Try it outside Owlbear.</b> Open <code>index.html?dev=gm</code> or <code>index.html?dev=player</code> in a normal browser. Data is kept in that browser only.</li>
+</ul>
+
+<h2>Licence and credit</h2>
+<p>MIT licence, copyright Solid State Games 2026. Includes the Owlbear Rodeo SDK (MIT).</p>
+<p class="credit">Unofficial fan work, built from the AD&D 1st Edition Dungeon Masters Guide, Players Handbook and Monster Manual. Not affiliated with or endorsed by the rights holders.</p>
+<div class="orn"></div>
+</main>
+</body>
+</html>
