@@ -626,6 +626,7 @@ if (fs.existsSync(path.join(root, '..', '..', '..', 'ADD-BOOKS-PDF', 'TEXT'))) {
     check('(k) undo across a round change goes back to the earlier round and reports the later round\'s log key as removed (so it is deleted from the scene)', c.rd === 1 && c.ph === 4 && !lg[2] && rm.join() === '2' && lg[1][lg[1].length - 1][1] === 9);
     // replaced rolls are hidden
     check('(k) the shown log keeps only the last roll a side made for a kind', CS.visible([CS.entry(0, 0, 0, 2, 0, 0), CS.entry(0, 0, 1, 3, 0, 0), CS.entry(0, 0, 0, 6, 0, 0)]).map(e => e[4]).join() === '3,6');
+    check('(k) a step that logs into round 0 as round 1 starts (no surprise) still reaches the stored patch', (() => { const k = mk(), l = {}; CS.noSurprise(k, l); const pt = CS.patch(k, l, [], []); return k.rd === 1 && Array.isArray(pt[CS.LOGP + '0']); })());
     // tray: stale value ignored, first new value from an allowed roller taken, other-side roller ignored
     const md = (v, n) => ({ 'rodeo.owlbear.dice/rollValues': v, 'rodeo.owlbear.dice/roll': { n } });
     const P = (a, b, g) => [{ id: 'gm', name: 'GM', metadata: g || {} }, { id: 'p1', name: 'Sam', metadata: a || {} }, { id: 'p2', name: 'Kim', metadata: b || {} }];

@@ -286,10 +286,10 @@ const CombatState = (function () {
         Object.keys(meta).forEach(function (k) { if (k.indexOf(LOGP) === 0) { const r = k.slice(LOGP.length); if (r === "s") sum = meta[k]; else logs[r] = meta[k]; } });
         return { c: meta[KEY] && meta[KEY].on ? meta[KEY] : null, logs: logs, sum: sum };
     }
-    // the metadata patch to write: combat, the current round's log, the summary if folded; removed keys are set undefined (clears them)
+    // the metadata patch to write: combat, the kept rounds' logs, the summary if folded; removed keys are set undefined (clears them)
     function patch(c, logs, sum, removed) {
         const o = {}; o[KEY] = c;
-        if (logs[c.rd]) o[LOGP + c.rd] = logs[c.rd];
+        Object.keys(logs).forEach(function (k) { o[LOGP + k] = logs[k]; });   // all kept rounds: a step can log into round 0 as round 1 starts
         if (removed && removed.length) { o[LOGP + "s"] = sum; removed.forEach(function (k) { o[LOGP + k] = undefined; }); }
         return o;
     }
