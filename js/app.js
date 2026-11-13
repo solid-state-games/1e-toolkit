@@ -172,16 +172,19 @@ const Enc = (function () {
     const TERRAINS = LAND_TERRAINS;
     const KEYSET = "toolkit/gm/enc";
     function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+    const st = { mode: "", terrain: "plains", density: "high" };
+    const DENS = [["high", "Wilderness", "1 in 10"], ["medium", "Patrolled", "1 in 12"], ["low", "Dense", "1 in 20"]];
+    // mode buttons, grouped (the groups come from the engine's own lists)
+    const MODE_GROUPS = [["Climate", [""].concat(LAND_MODES)], ["Water", WATER_MODES], ["Planes", PLANE_MODES], ["City", CITY_MODES]];
+    const modeLabel = function (m) { return m ? MODE_SHORT[m] : "Temperate"; };
+    const pressed = function (b, on) { return ' aria-pressed="' + (on ? "true" : "false") + '"' + (on ? ' class="' + b + ' on"' : ' class="' + b + '"'); };
     function init(el) {
         root = el;
-        const modeOpts = [["", "Temperate (outdoor)"]].concat(SOURCE_MODES.map(function (m) { return [m, MODE_SHORT[m]]; }));
-        el.innerHTML = '<div class="ctl">' +
-            '<label>Mode <select id="e-mode">' + modeOpts.map(function (m) { return '<option value="' + m[0] + '">' + esc(m[1]) + "</option>"; }).join("") + "</select></label>" +
-            '<label>Terrain <select id="e-terrain"></select></label>' +
-            '<label>Density <select id="e-density"><option value="high">Wilderness (1 in 10)</option><option value="medium">Patrolled (1 in 12)</option><option value="low">Dense (1 in 20)</option></select></label>' +
-            '<label>Numbers <select id="e-bell"><option value="bell" selected>Bell (MM II p.5 dice)</option><option value="linear">Linear (flat)</option></select></label>' +
-            '<label class="chk"><input type="checkbox" id="e-air"> Airborne</label><label class="chk"><input type="checkbox" id="e-psi"> Psionic</label><label class="chk"><input type="checkbox" id="e-moon"> Bright moon</label>' +
-            "</div>" +
+        el.innerHTML = '<div class="egroup"><span class="elab">Mode</span><div class="emodes" id="e-modes">' + MODE_GROUPS.map(function (g) {
+                return '<div class="mgrp"><span class="mcap">' + g[0] + "</span><div class=\"seg wrap\">" + g[1].map(function (m) { return '<button type="button" data-mode="' + m + '"' + pressed("sb", m === st.mode) + ">" + esc(modeLabel(m)) + "</button>"; }).join("") + "</div></div>"; }).join("") + "</div></div>" +
+            '<div class="egroup"><span class="elab">Terrain</span><div class="hexgrid" id="e-hex"></div></div>' +
+            '<div class="egroup"><span class="elab">Density</span><div class="seg" id="e-dens">' + DENS.map(function (d) { return '<button type="button" data-dens="' + d[0] + '" title="' + d[2] + '"' + pressed("sb", d[0] === st.density) + ">" + d[1] + " <small>" + d[2] + "</small></button>"; }).join("") + "</div></div>" +
+            '<div class="ctl"><label class="chk"><input type="checkbox" id="e-air"> Airborne</label><label class="chk"><input type="checkbox" id="e-psi"> Psionic</label><label class="chk"><input type="checkbox" id="e-moon"> Bright moon</label></div>' +
             '<details class="more"><summary>Party (for reactions and evasion)</summary><div class="ctl">' +
             '<label>Party size <input type="number" id="e-pn" min="1" value="10"></label><label>Party HD <input type="number" id="e-phd" min="1" value="10"></label>' +
             '<label>Charisma <input type="number" id="e-cha" min="3" max="25" value="10"></label><label>Reaction adj <input type="number" id="e-rm" value="0"></label>' +
@@ -191,27 +194,32 @@ const Enc = (function () {
             "</div></details>" +
             '<div class="row"><button type="button" class="btn" id="e-day">Roll a day</button><button type="button" class="btn" id="e-one">Roll one encounter</button><button type="button" class="btn ghost" id="e-copy">Copy as text</button></div>' +
             '<div id="e-out" class="out"><p class="muted">Pick a terrain and roll. Encounter checks follow DMG p.47; tables are DMG Appendix C.</p></div>';
-        $("e-mode").onchange = fillTerrains; fillTerrains();
+        fillTerrains();
         $("e-day").onclick = function () { roll("day"); }; $("e-one").onclick = function () { roll("one"); };
         $("e-copy").onclick = function (ev) { if (last) copyText(last.text, ev.target); };
         el.addEventListener("click", cardAction);
     }
+    const terrainLabel = function (t) { return cap(t.replace(/([A-Z])/g, " $1").toLowerCase()); };
+    // honeycomb: rows of four, every second row shifted half a hex
     function fillTerrains() {
-        const m = $("e-mode").value, ts = m ? modeTerrains(m) : TERRAINS, old = $("e-terrain").value;
-        $("e-terrain").innerHTML = ts.map(function (t) { return '<option value="' + t + '">' + esc(cap(t.replace(/([A-Z])/g, " $1").toLowerCase())) + "</option>"; }).join("");
-        if (ts.indexOf(old) >= 0) $("e-terrain").value = old;
-        $("e-density").disabled = !!m && !LAND_MODES.includes(m);
+        const ts = st.mode ? modeTerrains(st.mode) : TERRAINS;
+        if (ts.indexOf(st.terrain) < 0) st.terrain = ts[0];
+        let rows = "";
+        for (let i = 0; i < ts.length; i += 4) rows += '<div class="hexrow' + (i % 8 ? " shift" : "") + '">' + ts.slice(i, i + 4).map(function (t) { return '<button type="button" class="hex' + (t === st.terrain ? " on" : "") + '" data-terrain="' + t + '" aria-pressed="' + (t === st.terrain) + '" title="' + esc(terrainLabel(t)) + '"><span>' + esc(terrainLabel(t)) + "</span></button>"; }).join("") + "</div>";
+        $("e-hex").innerHTML = rows;
+        root.querySelectorAll("[data-dens]").forEach(function (b) { b.disabled = !!st.mode && !LAND_MODES.includes(st.mode); });
     }
+    function pick(attr, val) { root.querySelectorAll("[" + attr + "]").forEach(function (b) { const on = b.getAttribute(attr) === val; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }); }
     function settings() {
-        const s = defaultSettings(), m = $("e-mode").value;
+        const s = defaultSettings(), m = st.mode;
         s.modes = (m ? [m] : []).concat($("e-air").checked ? ["airborne"] : [], $("e-psi").checked ? ["psionic"] : []);
-        s.density = $("e-density").value; s.bellCurve = $("e-bell").value === "bell";
+        s.density = st.density; s.bellCurve = tkDice() === "bell";   // the dice curve is a setting (the cog), not a control here
         s.partyNumber = parseInt($("e-pn").value, 10) || 10; s.partyHD = parseInt($("e-phd").value, 10) || 10; s.charisma = parseInt($("e-cha").value, 10) || 10;
         s.reactionMod = parseInt($("e-rm").value, 10) || 0; s.partyAlignment = $("e-al").value; s.mount = $("e-mount").value; s.encumbrance = $("e-enc").value; s.brightMoon = $("e-moon").checked;
         return s;
     }
     function roll(kind) {
-        const s = settings(), terrain = $("e-terrain").value, out = $("e-out");
+        const s = settings(), terrain = st.terrain, out = $("e-out");
         let day;
         if (kind === "day") day = rollDay(s, terrain);
         else {
@@ -220,10 +228,16 @@ const Enc = (function () {
             const p = { id: "one", label: "One encounter", icon: "\u{1F3B2}", light: "daylight", status: enc.kind === "none" ? "clear" : "encounter", checkText: "Rolled directly, no check", encounter: enc.kind === "none" ? null : enc, note: enc.kind === "none" ? enc.reason : "" };
             day = { terrain: terrain, settings: s, plan: { title: "One encounter", periods: [p] }, periods: [p] };
         }
-        out.innerHTML = '<div class="emeta">' + esc(day.plan ? (day.plan.title || "") : "") + " " + esc(terrain) + "</div>" + dayCardsHtml(day, terrain, s);
+        // a day: the grid, then cards for the encounters only (the grid's "none" and dash say the rest); one encounter: the card alone
+        out.innerHTML = '<div class="emeta">' + esc(day.plan ? (day.plan.title || "") : "") + " " + esc(terrain) + "</div>" + (kind === "day" ? dayGridHtml(day) : "") + dayCardsHtml(day, terrain, s, kind === "day");
         last = { day: day, terrain: terrain, settings: s, text: day.periods.map(function (p) { return cardPlainText(terrain, s.density, p); }).join("\n\n") };
     }
     function cardAction(ev) {
+        const t = ev.target.closest && ev.target.closest("[data-terrain],[data-mode],[data-dens],[data-goto]");
+        if (t && t.dataset.terrain) { st.terrain = t.dataset.terrain; pick("data-terrain", st.terrain); return; }
+        if (t && t.dataset.mode !== undefined) { st.mode = t.dataset.mode; pick("data-mode", st.mode); fillTerrains(); return; }
+        if (t && t.dataset.dens) { st.density = t.dataset.dens; pick("data-dens", st.density); return; }
+        if (t && t.dataset.goto) { const card = document.getElementById(t.dataset.goto); if (card) card.scrollIntoView({ block: "start", behavior: "smooth" }); return; }
         const btn = ev.target.closest && ev.target.closest("[data-act]");
         if (!btn || !btn.dataset.enc) return;
         const entry = ENCOUNTER_REGISTRY[btn.dataset.enc], box = btn.closest("details"), out = box && box.querySelector(".enc-out");
@@ -367,6 +381,9 @@ function tkToggleTheme() {
     if (f && f.contentWindow) { try { f.contentWindow.postMessage({ type: "1e-theme", theme: r.dataset.theme }, location.origin); } catch (e) { /* ignore */ } }
 }
 
+/* the Encounters dice curve (Bell = MM II p.5 dice, Linear = flat): a per-browser setting like the others, default Bell */
+function tkDice() { try { return localStorage.getItem("tk-dice") === "linear" ? "linear" : "bell"; } catch (e) { return "bell"; } }
+
 /* text size and spacing (like Gmail's density setting): per browser, applied to <html> */
 function tkSetView(kind, v) {
     const r = document.documentElement;
@@ -395,6 +412,7 @@ function tkOpenSettings(kind, from) {
         '<label class="setrow">Text size <select id="set-size">' + opt("s", "Small", z) + opt("m", "Medium", z) + opt("l", "Large", z) + "</select></label>" +
         '<label class="setrow">Spacing <select id="set-density">' + opt("compact", "Compact", d) + opt("default", "Default", d) + opt("comfortable", "Comfortable", d) + "</select></label>" +
         '<div class="setrow">Theme <button type="button" class="btn ghost" id="set-theme">Light / Dark</button></div>';
+    if (kind === "hub" && TK.role === "GM") h += '<label class="setrow">Encounter dice <select id="set-dice"><option value="bell"' + (tkDice() === "bell" ? " selected" : "") + '>Bell (MM II p.5 dice)</option><option value="linear"' + (tkDice() === "linear" ? " selected" : "") + ">Linear (flat)</option></select></label>";
     if (kind === "sheet" || kind === "sheetro") {
         h += '<div class="setacts">' + (kind === "sheet" ? '<button type="button" class="btn" data-act="savenow">Save now</button>' : "") + '<button type="button" class="btn ghost" data-act="export">Export JSON</button><button type="button" class="btn ghost" data-act="copyjson">Copy JSON</button>' +
             (kind === "sheet" ? '<button type="button" class="btn ghost" data-act="import">Import JSON</button><button type="button" class="btn ghost" data-act="newchar" title="Start a new character on this token (asks first)">New character</button>' : "") + "</div>";
@@ -405,6 +423,7 @@ function tkOpenSettings(kind, from) {
     document.getElementById("set-size").onchange = function () { tkSetView("size", this.value); };
     document.getElementById("set-density").onchange = function () { tkSetView("density", this.value); };
     document.getElementById("set-theme").onclick = tkToggleTheme;
+    if (document.getElementById("set-dice")) document.getElementById("set-dice").onchange = function () { try { localStorage.setItem("tk-dice", this.value); } catch (e) { /* no storage */ } };
     document.getElementById("set-size").focus();
 }
 document.addEventListener("click", function (e) { const g = e.target.closest("[data-gear]"); if (g) tkOpenSettings(g.dataset.gear, g); });

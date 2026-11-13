@@ -315,16 +315,31 @@ function treasureCaption(res) {
 }
 
 // ----- Encounters tab: one day as plain data for the page -----
-function dayCardsHtml(day, terrain, settings) {
+// The day at a glance: a two-row grid, the day's periods on top and each one's result below (monster, "none", or a grey dash where no check is made).
+// An encounter cell scrolls to its card (id ecard-<period>). The check roll is the cell's tooltip.
+function encounterShortName(enc) { return { patrol: "Patrol", stronghold: "Stronghold", party: "Party" }[enc.kind] || enc.name || "Encounter"; }
+function dayGridHtml(day) {
+    const ps = day.periods || []; if (!ps.length) return "";
+    const head = ps.map(function (p) { return p.status === "encounter" ? '<button type="button" class="ehd go" data-goto="ecard-' + p.id + '">' + escapeHtml(p.label) + "</button>" : '<div class="ehd">' + escapeHtml(p.label) + "</div>"; }).join("");
+    const cells = ps.map(function (p) {
+        if (p.status === "nocheck") return '<div class="ecell na" title="No encounter check required this part of the day">&ndash;</div>';
+        if (p.status === "clear") return '<div class="ecell none" title="' + escapeHtml(p.checkText || "") + '">none</div>';
+        const n = encounterShortName(p.encounter);
+        return '<button type="button" class="ecell hit go" data-goto="ecard-' + p.id + '" title="' + escapeHtml((p.checkText || "") + " - " + n) + '">' + escapeHtml(n) + "</button>";
+    }).join("");
+    return '<div class="egrid" style="--n:' + ps.length + '">' + head + cells + "</div>";
+}
+// only = true: the detail cards are for encounters only (the grid already says "none" or a dash for the rest)
+function dayCardsHtml(day, terrain, settings, only) {
     if (!day.plan) return '<div class="empty">That mode has no table for ' + escapeHtml(terrain) + ".</div>";
-    return day.periods.map(function (p) {
+    return day.periods.filter(function (p) { return !only || p.status === "encounter"; }).map(function (p) {
         let tag = p.status === "nocheck" ? "No check" : p.status === "clear" ? "Clear" : "Encounter";
         if (p.encounter) tag = { patrol: "Patrol", stronghold: "Stronghold", party: "Party" }[p.encounter.kind] || tag;
         let body;
         if (p.status === "nocheck") body = '<div class="muted">No encounter check required.</div>';
         else if (p.status === "clear") body = '<div class="muted">' + escapeHtml(p.note ? "No encounter. " + p.note : "No encounter.") + "</div>";
         else { p.encounter.terrain = terrain; body = encounterBodyHtml(p.encounter, { terrain: terrain, light: p.light, setting: "outdoor" }); }
-        return '<div class="ecard status-' + p.status + '"><div class="ehead"><span>' + escapeHtml(p.label) + '</span><span class="etag">' + tag + "</span></div>" +
+        return '<div class="ecard status-' + p.status + '" id="ecard-' + p.id + '"><div class="ehead"><span>' + escapeHtml(p.label) + '</span><span class="etag">' + tag + "</span></div>" +
             '<div class="ebody">' + body + "</div></div>";
     }).join("");
 }

@@ -252,13 +252,34 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
     await g.shot(path.join(OUT, 'hub-gm-characters.png'));
     // encounters
     await g.click('[data-tab="enc"]'); await g.sleep(150);
-    await g.set('#e-terrain', 'forest'); await g.click('#e-day'); await g.sleep(300);
-    check('GM encounters: day rolled into cards', await g.ev('document.querySelectorAll(".ecard").length') === 6);
+    check('Encounters: terrain hexes (eight for temperate), mode and density as buttons, no selects for them, no dice-curve control on the tab', await g.ev('document.querySelectorAll("#e-hex .hex").length') === 8 && await g.ev('!document.getElementById("e-terrain")&&!document.getElementById("e-mode")&&!document.getElementById("e-density")&&!document.getElementById("e-bell")') && await g.ev('document.querySelectorAll("#e-dens button").length') === 3 && await g.ev('document.querySelectorAll("#e-modes [data-mode]").length') === 14);
+    await g.click('[data-terrain="forest"]'); await g.sleep(100);
+    check('Encounters: clicking a hex selects it (filled, aria-pressed) and only that one', await g.ev('document.querySelector("[data-terrain=forest]").classList.contains("on")&&document.querySelectorAll("#e-hex .hex.on").length===1&&document.querySelector("[data-terrain=forest]").getAttribute("aria-pressed")==="true"'));
+    await g.click('[data-terrain="plains"]'); await g.click('#e-day'); await g.sleep(300);   // plains: checks only morning, evening, midnight, so the grid has dashes
+    const dayInfo = () => g.ev('JSON.stringify({head:Array.from(document.querySelectorAll(".egrid .ehd")).map(function(e){return e.textContent}),cells:Array.from(document.querySelectorAll(".egrid .ecell")).map(function(e){return [e.className,e.textContent]}),cards:document.querySelectorAll(".ecard").length,emeta:document.querySelector(".emeta").textContent})').then(JSON.parse);
+    let di = await dayInfo();
+    check('Encounters: a plains day shows the 2-row grid, six periods in order (Morning to Pre-Dawn), a result cell under each', di.head.join('|') === 'Morning|Noon|Evening|Night|Midnight|Pre-Dawn' && di.cells.length === 6 && /plains/.test(di.emeta), JSON.stringify(di.head));
+    check('Encounters: the grid matches the checks: a dash (grey) where no check is made, "none" where it was checked, a monster name where it hit; one detail card per encounter and no cards for the rest', di.cells.every(c => /ecell (na|none|hit)/.test(c[0])) && di.cells.filter(c => /na/.test(c[0])).every(c => c[1] === '–') && di.cells.filter(c => /none/.test(c[0])).every(c => c[1] === 'none') && di.cells.filter(c => /hit/.test(c[0])).every(c => c[1].length > 2) && di.cards === di.cells.filter(c => /hit/.test(c[0])).length && !/No encounter check required/.test(await g.ev('document.getElementById("e-out").innerText')) && di.cells.filter(c => /na/.test(c[0])).length >= 1);
+    let hitDay = di; for (let i = 0; i < 40 && !hitDay.cells.some(c => /hit/.test(c[0])); i++) { await g.click('#e-day'); await g.sleep(150); hitDay = await dayInfo(); }
+    check('Encounters: a day with an encounter has a card headed by its period, in period order, and a grid cell that scrolls to it', hitDay.cards >= 1 && await g.ev('(function(){var b=document.querySelector(".egrid .go");var id=b.dataset.goto;var c=document.getElementById(id);return !!c&&/^ecard-/.test(id)&&c.querySelector(".ehead span").textContent.length>0})()') && await g.ev('(function(){var ids=Array.from(document.querySelectorAll(".ecard")).map(function(c){return c.id});var grid=Array.from(document.querySelectorAll(".egrid .hit")).map(function(b){return b.dataset.goto});return JSON.stringify(ids)===JSON.stringify(grid)})()'));
+    await g.ev('document.getElementById("e-out").scrollIntoView(); window.scrollTo(0,0)'); await g.click('.egrid .hit'); await g.sleep(900);
+    check('Encounters: clicking a result cell scrolls its card into view', await g.ev('(function(){var c=document.getElementById(document.querySelector(".egrid .hit").dataset.goto).getBoundingClientRect();return c.top<window.innerHeight&&c.bottom>0})()'));
+    await shotBoth(g, 'temperate-day', { full: true }, 'enc-1-');
     let guard = 0, got = 0; while (!got && guard++ < 25) { await g.click('#e-one'); await g.sleep(120); got = await g.ev('document.querySelectorAll(".ecard .card-monster-name").length'); }
-    check('GM encounters: one encounter produces a card with a name', got > 0);
-    await g.set('#e-mode', 'sylvan'); await g.set('#e-bell', 'linear'); await g.click('#e-day'); await g.sleep(250);
-    check('GM encounters: sylvan mode and linear dice roll', await g.ev('document.querySelectorAll(".ecard").length') > 0 && !/NaN|undefined/.test(await g.ev('document.getElementById("e-out").innerText')));
-    await g.set('#e-mode', ''); await g.set('#e-terrain', 'plains'); await g.click('#e-day'); await g.sleep(200);
+    check('GM encounters: one encounter produces a card with a name (and no grid)', got > 0 && await g.ev('!document.querySelector(".egrid")'));
+    await g.click('[data-mode="saltWater"]'); await g.sleep(150);
+    check('Encounters: choosing a water mode swaps the hexes for that mode\'s terrains and greys the density segment', await g.ev('document.querySelectorAll("#e-hex .hex").length') >= 2 && await g.ev('document.querySelector("[data-terrain=forest]")===null') && await g.ev('document.querySelector("#e-dens button").disabled'));
+    await g.click('#e-day'); await g.sleep(250); di = await dayInfo();
+    check('Encounters: a salt-water day has a column per check in that mode (Dawn and Noon), grid and cards agree', di.head.length >= 1 && di.head.length === di.cells.length && !/NaN|undefined/.test(await g.ev('document.getElementById("e-out").innerText')), JSON.stringify(di.head));
+    await shotBoth(g, 'water-mode', { full: true }, 'enc-1-');
+    await g.click('[data-mode="sylvan"]'); await g.sleep(100); await g.click('#e-day'); await g.sleep(250);
+    check('GM encounters: sylvan mode rolls (dice curve comes from the settings)', await g.ev('document.querySelectorAll(".egrid .ecell").length') > 0 && !/NaN|undefined/.test(await g.ev('document.getElementById("e-out").innerText')));
+    await g.click('[data-gear]'); await g.sleep(100);
+    check('Encounters dice curve is in the cog settings (GM hub), default Bell, remembered', await g.ev('document.getElementById("set-dice").value') === 'bell' && (await g.set('#set-dice', 'linear'), await g.ev('localStorage.getItem("tk-dice")') === 'linear'));
+    await g.ev('document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))'); await g.sleep(100); await g.click('#e-day'); await g.sleep(250);
+    check('GM encounters: linear dice roll from the setting', !/NaN|undefined/.test(await g.ev('document.getElementById("e-out").innerText')) && await g.ev('document.querySelectorAll(".egrid .ecell").length') > 0);
+    await g.ev('localStorage.removeItem("tk-dice")');
+    await g.click('[data-mode=""]'); await g.click('[data-terrain="plains"]'); await g.click('#e-day'); await g.sleep(200);
     for (let i = 0; i < 25 && !(await g.ev('!!document.querySelector("[data-act=evade]")')); i++) { await g.click('#e-one'); await g.sleep(100); }
     if (await g.ev('!!document.querySelector("[data-act=evade]")')) { await g.ev('document.querySelector("[data-act=evade]").closest("details").open=true'); await g.click('[data-act="evade"]'); await g.sleep(100); check('GM encounters: evade button resolves', (await g.ev('document.querySelector(".enc-evade .enc-out").innerText')).length > 5); }
     await g.shot(path.join(OUT, 'hub-gm-encounters.png'), { full: true });
