@@ -375,6 +375,15 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
         await g.click('[data-act="end"]'); await g.sleep(400);
         await g.click('[data-tab="sheets"]');
     }
+    {   // the action popover follows its content height
+        await g.click('[data-tab="guide"]'); await g.sleep(400); const hg = await g.ev('window.__actionHeight');
+        await g.click('[data-tab="com"]'); await g.sleep(400); const hc = await g.ev('window.__actionHeight');
+        check('popover height follows the content: the short Guide tab asks for a smaller height than the Combat tab, both within 200 to 760', hg >= 200 && hg <= 760 && hc <= 760 && hg < hc, hg + ' vs ' + hc);
+        await g.ev('window.__vh=420;window.dispatchEvent(new Event("resize"))'); await g.sleep(500); const hv = await g.ev('window.__actionHeight');
+        check('popover height never goes past the bottom of the screen: a 420 px viewport caps it at 316 (viewport less 104)', hv <= 316 && hv >= 200, String(hv));
+        await g.ev('window.__vh=900;window.dispatchEvent(new Event("resize"))'); await g.sleep(400);
+        await g.click('[data-tab="sheets"]');
+    }
     // GM: assign and open the player token; skills tab on a thief
     await g.click('[data-tab="sheets"]'); await g.sleep(100);
     await g.set('li[data-id="t2"] select[data-act=assign]', 'dev-player'); await g.sleep(300);
