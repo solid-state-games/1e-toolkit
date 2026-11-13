@@ -6,7 +6,7 @@ const sandbox = { console: { log() {}, warn() {}, error() { console.error.apply(
 sandbox.window = sandbox;
 const ctx = vm.createContext(sandbox);
 const ORDER = ['lib/rules_1e.js', 'lib/combat_rules.js', 'lib/encounterTables.js', 'lib/dungeonTables.js', 'lib/monsters.js', 'lib/treasure_engine.js', 'lib/morale.js', 'lib/reactions.js',
-    'lib/troopBuilders.js', 'lib/stronghold.js', 'lib/mounts.js', 'lib/pursuit.js', 'lib/encounter_engine.js', 'lib/quickparty_rules.js', 'js/sheet_rules.js', 'js/sheet_simple.js', 'js/gm_render.js', 'js/gm_combat.js'];
+    'lib/troopBuilders.js', 'lib/stronghold.js', 'lib/mounts.js', 'lib/pursuit.js', 'lib/encounter_engine.js', 'lib/quickparty_rules.js', 'js/sheet_rules.js', 'js/sheet_simple.js', 'js/gm_render.js', 'js/gm_combat.js', 'js/combat_state.js'];
 ORDER.forEach(f => vm.runInContext(fs.readFileSync(path.join(root, f), 'utf8'), ctx, { filename: f }));
 const G = expr => vm.runInContext(expr, ctx);
 const Rules = sandbox.Rules, SR = sandbox.SheetRules;
@@ -538,6 +538,69 @@ if (fs.existsSync(path.join(root, '..', '..', '..', 'ADD-BOOKS-PDF', 'TEXT'))) {
     [8, 7, 6, 5, 4, 3, 2].forEach(a => { const i = ring('Bracers of Defense AC ' + a); if (!i || i.ac !== a) rb.push('bracers ' + a); });
     [1, 2, 3, 4, 5].forEach(p => { const i = ring('Cloak of Protection +' + p); if (!i || i.a !== p || i.s !== p) rb.push('cloak ' + p); });
     check('(f) ring of protection (AC and save plusses from the DMG p.130 table), bracers AC 8 to 2 (p.139) and cloaks +1 to +5 (p.141) are read as printed', rb.length === 0, rb.join(' | '));
+}
+
+
+// ---- (j) combat mode, step 1: state, surprise, initiative, phases, log (COMBAT_SPEC 8.2, 8.3, 9; DMG p.61-63)
+{
+    const CS = G('CombatState'), uuid = i => ('00000000-0000-4000-8000-' + String(i).padStart(12, '0'));
+    const ids = Array.from({ length: 40 }, (_, i) => uuid(i)), side = ids.map((_, i) => i < 6 ? 0 : 1);
+    const mk = () => CS.create(ids, side, ['Party', 'Goblins'], [2, 2]);
+    let c = mk();
+    check('(j) combat state has the spec 8.2 shape (v, on, rd, ph, sg, op, sd[], w, ro[]) and stays under the key namespace', ['v', 'on', 'rd', 'ph', 'sg', 'op', 'sd', 'w', 'ro'].every(k => k in c) && c.sd.length === 2 && c.ro.length === 40 && c.sd[0].m.length === 6 && c.sd[1].m.length === 34 && CS.KEY === 'io.github.solid-state-games.1e-toolkit/combat' && CS.KEY === SR.NS + '/combat');
+    check('(j) all restrictions at their section 9 defaults when op is 0 (declare off, the rest on); one bit per toggle; switching round-trips', !CS.isOn(c, 'cm.declare') && CS.isOn(c, 'cm.surprise') && CS.isOn(c, 'cm.phase-order') && (CS.setToggle(c, 'cm.declare', true), CS.isOn(c, 'cm.declare') && c.op === 2) && (CS.setToggle(c, 'cm.initiative', false), !CS.isOn(c, 'cm.initiative') && c.op === 66) && (CS.setToggle(c, 'cm.declare', false), CS.setToggle(c, 'cm.initiative', true), c.op === 0) && CS.TOGGLES.every(t => t.b < 31));
+    // surprise cells: every roll pair against ranges 1 to 6 equals the text reading (DMG p.61-62, ruling A1), and 1 vs 2 is one segment for the higher roller
+    let bad = 0;
+    for (let ra = 0; ra <= 6; ra++) for (let rb = 0; rb <= 6; rb++) for (let a = 1; a <= 6; a++) for (let b = 1; b <= 6; b++) {
+        const x = CS.create(['a', 'b'], [0, 1], ['A', 'B'], [ra, rb]);
+        if (ra) CS.rollSurprise(x, 0, a); if (rb) CS.rollSurprise(x, 1, b);
+        if (!ra && !rb) CS.resolveSurprise(x);
+        const sa = ra && a <= ra ? a : 0, sb = rb && b <= rb ? b : 0, d = sa - sb;
+        if (x.sd[0].sl !== Math.max(0, d) || x.sd[1].sl !== Math.max(0, -d)) bad++;
+    }
+    check('(j) surprise: 2401 range and roll cells match the DMG p.61-62 text (segments lost = the surprised side\'s die, both surprised subtract, equal = none)', bad === 0, bad + ' wrong');
+    let s = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.rollSurprise(s, 0, 1); CS.rollSurprise(s, 1, 2);
+    check('(j) surprise 1 vs 2 (both surprised): the side that rolled 2 loses 1 segment, the side that rolled 1 loses none; banner bars the surprised side', s.sd[0].sl === 0 && s.sd[1].sl === 1 && s.sg === 1 && CS.barred(s, 1) && !CS.barred(s, 0) && /Party acts\. Goblins cannot act/.test(CS.banner(s).b));
+    s = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.rollSurprise(s, 1, 2); CS.rollSurprise(s, 0, 5);
+    check('(j) surprise 2 vs 5 (only the 2 is in range): the 2-side loses 2 segments, then round 1', s.sd[1].sl === 2 && s.sd[0].sl === 0 && CS.advance(s).ok && s.sg === 2 && CS.advance(s).ok && s.rd === 1 && s.sg === 0);
+    // DEX reaction per individual (S03, PHB p.11 Table I): 16 +1, 17 +2, 18 +3, 6 to 15 none, 3 -3
+    const dx = d => CS.indivSegs(s0, 0, d), s0 = CS.create(['a', 'b'], [0, 1], ['P', 'F'], [2, 2]);
+    CS.rollSurprise(s0, 0, 4); CS.rollSurprise(s0, 1, 6); s0.sd[0].ra = 4; CS.resolveSurprise(s0);
+    check('(j) surprise DEX: 3 segments lost becomes 3 (DEX 10), 2 (16), 1 (17), 0 (18), 6 (DEX 3); an unsurprised side stays 0; switch off ignores DEX', s0.sd[0].sl === 4 && s0.sd[1].sl === 0 && dx(10) === 4 && dx(16) === 3 && dx(17) === 2 && dx(18) === 1 && dx(3) === 7 && CS.indivSegs(s0, 1, 3) === 0 && (CS.setToggle(s0, 'cm.surprise-dex', false), dx(18) === 4));
+    check('(j) a range of 0 (prior detection, S04) needs no roll and surprises nobody; skip goes to round 1', (() => { const k = CS.create(['a', 'b'], [0, 1], ['P', 'F'], [0, 0]); const ok = CS.resolveSurprise(k) && CS.maxSl(k) === 0 && CS.advance(k).ok && k.rd === 1; const k2 = CS.create(['a', 'b'], [0, 1], ['P', 'F'], [2, 2]); const stop = !CS.advance(k2).ok; CS.skipSurprise(k2); return ok && stop && k2.rd === 1; })());
+    // phase order: round 0, then declare (if on), initiative, first side, second side, end, next round (R02, I02)
+    let p = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.skipSurprise(p);
+    const trail = []; CS.rollInit(p, 0, 5); CS.rollInit(p, 1, 2);
+    for (let i = 0; i < 6; i++) { trail.push(p.rd + ':' + p.ph + ':' + CS.banner(p).b); CS.advance(p); }
+    check('(j) phase order: initiative, winner acts, other side acts, end of round, then round 2 starts with fresh initiative', trail.slice(0, 5).join(' | ') === '1:1:Rolling initiative | 1:2:Party acts | 1:3:Goblins acts | 1:4:End of round | 2:1:Rolling initiative' && p.rd === 2 && p.sd[0].in === 0 && p.w === -1, trail.join(' | '));
+    p = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.skipSurprise(p);
+    check('(j) cannot leave initiative until both sides have rolled; the lower roller goes second', !CS.advance(p).ok && (CS.rollInit(p, 0, 2), !CS.advance(p).ok) && CS.rollInit(p, 1, 6) === 1 && CS.advance(p).ok && CS.banner(p).b === 'Goblins acts' && (CS.advance(p), CS.banner(p).b === 'Party acts'));
+    p = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.skipSurprise(p); CS.rollInit(p, 0, 4); CS.rollInit(p, 1, 4); CS.advance(p);
+    check('(j) tied initiative is simultaneous: one "both sides act" phase, then end of round; the A23 tie note is there', p.w === 2 && /together \(tie\)/.test(CS.banner(p).b) && CS.advance(p).ok && p.ph === 4 && /longer weapon/.test(CS.TIE_NOTE) && /lower speed factor/.test(CS.TIE_NOTE));
+    p = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.setToggle(p, 'cm.declare', true); CS.skipSurprise(p);
+    const dtr = [p.ph]; CS.advance(p); dtr.push(p.ph);
+    CS.setToggle(p, 'cm.initiative', false); CS.setFirst(p, 1); CS.setToggle(p, 'cm.phase-order', false); CS.advance(p); dtr.push(p.ph); const anyB = CS.banner(p).b; CS.advance(p); dtr.push(p.ph);
+    check('(j) declare step only when switched on (0 then 1); initiative off lets the GM pick; side order off skips the second-side phase', dtr.join('') === '0124' && anyB === 'Goblins has initiative. Sides act in any order');
+    check('(j) round counter switch: banner says Combat, not a round number, when off', (() => { const k = mk(); CS.skipSurprise(k); const a = CS.banner(k).a; CS.setToggle(k, 'cm.rounds', false); return a === 'Round 1' && CS.banner(k).a === 'Combat'; })());
+    // size with a 40-token roster, 13 rounds of 40 log entries, folded as 8.3 says
+    const logs = {}, sum = []; let big = mk(); CS.skipSurprise(big);
+    let maxB = 0, folded = 0;
+    for (let r = 1; r <= 13; r++) {
+        big.rd = r; for (let e = 0; e < 40; e++) CS.logAdd(logs, r, [e % 10, e % 2 ? 2 : 0, e % 40, (e + 7) % 40, 14, 12, 6, 30, 3]);
+        folded += CS.fold(big, logs, sum).length; maxB = Math.max(maxB, CS.bytesOf(big, logs, sum));
+    }
+    check('(j) metadata size: combat with a 40-token roster alone is small, and 13 busy rounds with the fold stay under 14 kB', CS.bytesOf(mk(), {}, []) < 3500 && maxB <= 14000 && folded >= 7, 'combat ' + CS.bytesOf(mk(), {}, []) + ' B, peak ' + maxB + ' B, ' + folded + ' folded');
+    check('(j) log fold: rounds older than the last 6 become [round, winner, 0,0,0,0] lines in log/s, oldest first; the current round is never folded', sum.length === folded && sum.every((x, i) => x.length === 6 && (i === 0 || x[0] > sum[i - 1][0])) && logs[13] && Object.keys(logs).length <= 6);
+    const fl = {}, fs = [], fc = mk(); CS.skipSurprise(fc); CS.logAdd(fl, 1, CS.entry(0, 0, 0, 5, 0, 0)); CS.logAdd(fl, 1, CS.entry(0, 0, 1, 2, 0, 0)); fc.rd = 8; CS.logAdd(fl, 8, CS.entry(0, 0, 0, 1, 0, 0));
+    const rem = CS.fold(fc, fl, fs);
+    check('(j) a folded round keeps its initiative winner; the patch deletes the folded key (undefined) and writes the summary', rem.join() === '1' && fs[0].join() === '1,0,0,0,0,0' && (() => { const pt = CS.patch(fc, fl, fs, rem); return 'io.github.solid-state-games.1e-toolkit/log/1' in pt && pt['io.github.solid-state-games.1e-toolkit/log/1'] === undefined && Array.isArray(pt['io.github.solid-state-games.1e-toolkit/log/s']); })());
+    // log entries: kind 0 initiative, 1 surprise; the source is kept; export reads as text; clear removes our keys only
+    const lg = {}, lc = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.logAdd(lg, 0, CS.entry(0, 1, 0, 1, 2, 2)); CS.logAdd(lg, 1, CS.entry(0, 0, 1, 4, 0, 1));
+    const txt = CS.exportText(lc, lg, [], n => 'tok' + n);
+    check('(j) log entries record kind and source; the export is plain text with sides, surprise segments and rounds', /Party rolled 1 for surprise, surprised on 1 to 2 \(Owlbear Dice tray\)/.test(txt) && /Goblins rolled 4 for initiative \(physical die typed in\)/.test(txt) && /Surprise segments/.test(txt) && /Round 1/.test(txt) && /Party \(tok0\) \| Goblins \(tok1\)/.test(txt));
+    const meta = { other: 1 }; meta[CS.KEY] = lc; meta[CS.LOGP + '0'] = lg[0]; const clr = CS.clearPatch(meta), rd = CS.read(meta);
+    check('(j) read gives back the state and logs; clear unsets our keys and leaves other keys alone', rd.c && rd.logs[0].length === 1 && Object.keys(clr).length === 2 && !('other' in clr) && Object.values(clr).every(v => v === undefined) && CS.read({}).c === null);
+    check('(j) an old scene with no combat key reads as no combat; the banner never says undefined or NaN', CS.read({ a: 1 }).c === null && (() => { const k = mk(); const all = []; for (let i = 0; i < 12; i++) { all.push(CS.banner(k).a + CS.banner(k).b); CS.rollInit(k, 0, 3); CS.rollInit(k, 1, 4); CS.advance(k); } return !BAD.test(all.join(' ')); })());
 }
 
 const html = ['index.html', 'guide.html', 'js/app.js', 'css/toolkit.css'].map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
