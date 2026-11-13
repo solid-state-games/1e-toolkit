@@ -603,6 +603,73 @@ if (fs.existsSync(path.join(root, '..', '..', '..', 'ADD-BOOKS-PDF', 'TEXT'))) {
     check('(j) an old scene with no combat key reads as no combat; the banner never says undefined or NaN', CS.read({ a: 1 }).c === null && (() => { const k = mk(); const all = []; for (let i = 0; i < 12; i++) { all.push(CS.banner(k).a + CS.banner(k).b); CS.rollInit(k, 0, 3); CS.rollInit(k, 1, 4); CS.advance(k); } return !BAD.test(all.join(' ')); })());
 }
 
+
+// ---- (k) combat mode, rework: one-button steps, undo, tray, who rolls, Not fighting, derived surprise ranges, earlier surprise
+{
+    const CS = G('CombatState'), mk = (sd) => CS.create(['a', 'b', 'c'], sd || [0, 1, 1], ['Party', 'Goblins'], [2, 2]);
+    // the whole round on one button
+    let c = mk(), lg = {}; const labels = [];
+    const go = (v, src) => { labels.push(CS.primary(c)); return CS.step(c, lg, v, src || 0, []); };
+    const r0 = go([]);
+    go([1, 2]);   // surprise: Goblins lose 1
+    go(); go([5, 2]); go(); go(); go(); go();
+    check('(k) one button per step: roll surprise, the surprised side\'s segment, roll initiative, each side acts, next round', !r0.ok && r0.need.join() === '0,1' && labels.join(' | ') === 'Roll surprise | Roll surprise | Party acts: done | Roll initiative | Party acts: done | Goblins act: done | Next round | Roll initiative' && c.rd === 2 && c.ph === 1 && c.sd[0].in === 0, labels.join(' | '));
+    check('(k) a step that needs dice refuses to move without them, and a rolled step moves on by itself (initiative lands on first side acts)', (() => { const k = mk(); CS.skipSurprise(k); const a = CS.step(k, {}, [], 0, []); const b = CS.step(k, {}, [4, 1], 0, []); return !a.ok && b.ok && k.ph === 2 && k.w === 0; })());
+    const sl = (() => { const k = mk(); CS.rollSurprise(k, 0, 1); CS.rollSurprise(k, 1, 2); return CS.stepList(k).map(x => x.k + ':' + x.st).join(); })();
+    check('(k) step list: surprise done with its result, segment current; round 1 list is initiative, first side, second side, end, current one marked', sl === 'sur:done,seg:cur' && (() => { const k = mk(); CS.skipSurprise(k); CS.step(k, {}, [5, 2], 0, []); const L = CS.stepList(k); return L.map(x => x.st).join() === 'done,cur,todo,todo' && L[0].res === 'Party wins (5 to 2)' && L[1].label === 'Party acts' && L[2].label === 'Goblins act'; })() && CS.stepList((() => { const k = mk(); CS.rollSurprise(k, 0, 1); CS.rollSurprise(k, 1, 2); return k; })())[0].res === 'Goblins lose 1', sl);
+    // undo
+    c = mk(); lg = {}; CS.skipSurprise(c); const snap = CS.takeSnap(c, lg); CS.step(c, lg, [3, 6], 0, []); const logged = (lg[1] || []).length;
+    CS.undo(c, lg, snap, 'Roll initiative');
+    check('(k) undo puts back the step fields and logs a kind 9 entry; rolls of the undone step are gone from the shown log', c.ph === 1 && c.w === -1 && c.sd[0].in === 0 && logged === 3 && lg[1].length === 1 && lg[1][0][1] === 9 && /GM undid: Roll initiative/.test(CS.entryText(lg[1][0], c)) && CS.visible(lg[1]).length === 1);
+    c = mk(); lg = {}; CS.skipSurprise(c); CS.step(c, lg, [3, 6], 0, []); c.ph = 4; const sn2 = CS.takeSnap(c, lg); CS.step(c, lg, [], 0, []); CS.step(c, lg, [2, 1], 0, []);
+    const rm = CS.undo(c, lg, sn2, 'Next round');
+    check('(k) undo across a round change goes back to the earlier round and reports the later round\'s log key as removed (so it is deleted from the scene)', c.rd === 1 && c.ph === 4 && !lg[2] && rm.join() === '2' && lg[1][lg[1].length - 1][1] === 9);
+    // replaced rolls are hidden
+    check('(k) the shown log keeps only the last roll a side made for a kind', CS.visible([CS.entry(0, 0, 0, 2, 0, 0), CS.entry(0, 0, 1, 3, 0, 0), CS.entry(0, 0, 0, 6, 0, 0)]).map(e => e[4]).join() === '3,6');
+    // tray: stale value ignored, first new value from an allowed roller taken, other-side roller ignored
+    const md = (v, n) => ({ 'rodeo.owlbear.dice/rollValues': v, 'rodeo.owlbear.dice/roll': { n } });
+    const P = (a, b, g) => [{ id: 'gm', name: 'GM', metadata: g || {} }, { id: 'p1', name: 'Sam', metadata: a || {} }, { id: 'p2', name: 'Kim', metadata: b || {} }];
+    let base = CS.traySnap(P(md([4], 1), md([6], 1)));
+    check('(k) tray: a roll already in the tray when the step asks is stale and never taken', CS.trayPick(base, P(md([4], 1), md([6], 1)), [['p1']]) === null);
+    let pk = CS.trayPick(base, P(md([4], 2), md([6], 1)), [['p1']]);
+    check('(k) tray: the first new single d6 is taken, even when it repeats the old number, and says who rolled it', pk && pk.value === 4 && pk.name === 'Sam' && pk.j === 0 && CS.trayPick(base, P(md([4], 2), md([6], 1)), [['p1']]) === null);
+    base = CS.traySnap(P(md([1], 1), md([1], 1), md([1], 1)));
+    check('(k) tray: a roll from a player who may not roll for that side is ignored (Foes: GM only; Party: its owners only)', CS.trayPick(base, P(md([5], 9), md([1], 1), md([1], 1)), [['gm']]) === null && (base = CS.traySnap(P(md([1], 1), md([1], 1), md([1], 1))), CS.trayPick(base, P(md([1], 1), md([4], 8), md([1], 1)), [['p1'], ['gm']]) === null) && (base = CS.traySnap(P(md([1], 1), md([1], 1), md([1], 1))), CS.trayPick(base, P(md([1], 1), md([1], 1), md([2], 7)), [['p1']]) === null));
+    base = CS.traySnap(P(md([1], 1), md([1], 1), md([1], 1)));
+    pk = CS.trayPick(base, P(md([1], 1), md([3], 5), md([2], 6)), [['p1'], ['gm']]);
+        base = CS.traySnap(P({}, {}, {}));
+    const t1 = CS.trayPick(base, P(md([3], 1), {}, md([6], 1)), [['p1', 'p2'], ['gm']]), w2 = [['p1', 'p2'], ['gm']]; w2[t1.j] = null; const t2 = CS.trayPick(base, P(md([3], 1), {}, md([6], 1)), w2);
+    check('(k) tray: parallel needs: a Party roll fills need 0, the GM roll fills need 1; two dice or a d8 result is no d6', t1 && t2 && [t1, t2].some(x => x.j === 0 && x.value === 3) && [t1, t2].some(x => x.j === 1 && x.value === 6) && CS.dieOf(md([3, 4], 1)) === null && CS.dieOf(md([8], 1)) === null && CS.dieOf(md([{ value: 5 }], 1)) === 5);
+    // rollerFor
+    const own = ['p1', 'p2', ''], cc = mk();
+    check('(k) rollerFor: a side with player-owned tokens is rolled by those owners, a side with none by the GM, a token by its owner else the GM', CS.rollerFor(cc, own, 'gm', { side: 0 }).join() === 'p1' && (CS.moveToken(cc, 1, 0), CS.rollerFor(cc, own, 'gm', { side: 0 }).join() === 'p1,p2') && CS.rollerFor(cc, own, 'gm', { side: 1 }).join() === 'gm' && CS.rollerFor(cc, own, 'gm', { token: 0 }).join() === 'p1' && CS.rollerFor(cc, own, 'gm', { token: 2 }).join() === 'gm');
+    // Not fighting
+    const nf = CS.create(['a', 'b', 'c', 'd'], [0, 1, 2, 2], ['Party', 'Goblins'], [2, 2]);
+    check('(k) Not fighting: stored in the roster but in neither side, so it is left out of fighters, owners for rolls and banner; moving in and out works', nf.nf.join() === '2,3' && CS.fighters(nf).join() === '0,1' && CS.sideOf(nf, 2) === 2 && CS.rollerFor(nf, ['p1', 'p2', 'p3', 'p4'], 'gm', { side: 1 }).join() === 'p2' && (CS.moveToken(nf, 2, 1), CS.sideOf(nf, 2) === 1 && nf.nf.join() === '3') && (CS.moveToken(nf, 2, 2), nf.nf.join() === '2,3' && nf.sd[1].m.join() === '1') && !/Not fighting/.test(JSON.stringify(CS.banner(nf))));
+    // derived surprise ranges
+    const M = (name, cls, race, mon) => ({ name, cls: cls || [], race: race || '', mon: mon || null });
+    const dr = (a, b, ta, tb) => CS.deriveRanges([{ members: a, elfTick: !!ta }, { members: b, elfTick: !!tb }]);
+    let d = dr([M('Aldric', ['Fighter', 'Ranger'], 'Human')], [M('Goblin')]);
+    check('(k) a ranger in the party (multi-class counts): party surprised on 1 only (PHB p.24), foes surprised on 1-3 (the party surprises on 1-3)', d[0].ra === 1 && d[1].ra === 3 && /Aldric \(ranger\)/.test(d[0].txt) && /PHB p\.24/.test(d[0].pg), JSON.stringify(d));
+    const aerial = CS.monsterOf('Aerial servant');
+    d = dr([M('Aldric', ['Ranger'], 'Human')], [M('Aerial servant', [], '', aerial)]); const d0 = dr([M('Bob', ['Fighter'], 'Human')], [M('Aerial servant', [], '', aerial)]);
+    check('(k) a monster that surprises on 1-4 (MM p.6, by token name) makes the party surprised on 1-4, and a ranger cuts that to 1-3', d0[0].ra === 4 && d[0].ra === 3 && d[1].ra === 3 && CS.monsterOf('Aerial servant (2)').key === 'Aerial servant' && CS.monsterOf('Nobody') === null);
+    d = dr([M('Elwen', ['Fighter'], 'Elf')], [M('Goblin')]); const dt = dr([M('Elwen', ['Fighter'], 'Elf')], [M('Goblin')], true);
+    check('(k) elf or halfling surprise 1-4 only when the GM ticks the condition; tick off leaves 1-2 (PHB p.16, p.17)', d[1].ra === 2 && d[0].ra === 2 && dt[1].ra === 4 && dr([M('Pip', ['Thief'], 'Halfling')], [M('G')], true)[1].ra === 4 && dr([M('Pip', ['Thief'], 'Human')], [M('G')], true)[1].ra === 2);
+    check('(k) ranges: no members gives the usual 1-2; a side that surprises on 1-6 or an overwhelming factor floors at 0 and caps at 6; a GM override sticks', dr([], [])[0].ra === 2 && (() => { const k = mk(); CS.applyRanges(k, [{ ra: 1 }, { ra: 3 }]); const a = k.sd[0].ra === 1 && k.sd[1].ra === 3; CS.setRange(k, 0, 5); CS.applyRanges(k, [{ ra: 1 }, { ra: 3 }]); return a && k.sd[0].ra === 5 && k.sd[0].ov === 1 && k.sd[1].ra === 3; })());
+    // already rolled: same maths, source "rolled earlier"
+    let badE = 0;
+    for (let ra = 0; ra <= 4; ra++) for (let rb = 0; rb <= 4; rb++) for (let a = 1; a <= 6; a++) for (let b = 1; b <= 6; b++) {
+        const x = CS.create(['a', 'b'], [0, 1], ['A', 'B'], [ra, rb]), y = CS.create(['a', 'b'], [0, 1], ['A', 'B'], [ra, rb]), lx = {}, ly = {};
+        CS.step(x, lx, CS.needs(x).map(i => [a, b][i]), 0, []); CS.applyEarlierSurprise(y, ly, [a, b]);
+        if (JSON.stringify([x.rd, x.sg, x.sd[0].sl, x.sd[1].sl, x.sd[0].sr, x.sd[1].sr]) !== JSON.stringify([y.rd, y.sg, y.sd[0].sl, y.sd[1].sl, y.sd[0].sr, y.sd[1].sr])) badE++;
+    }
+    const ey = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]), el = {}; CS.applyEarlierSurprise(ey, el, [1, 2]);
+    check('(k) surprise dice rolled earlier give exactly the segments of rolled ones (3 x 25 x 36 cells) and the log says "rolled earlier"; "no surprise" goes to round 1', badE === 0 && ey.sd[1].sl === 1 && /Party rolled 1 for surprise, surprised on 1 to 2 \(rolled earlier\)/.test(CS.exportText(ey, el, [], x => x)) && (() => { const k = mk(), l = {}; CS.noSurprise(k, l); return k.rd === 1 && /No surprise/.test(l[0][0][9]); })());
+    check('(k) who rolled is kept in the entry and shown: "(Owlbear Dice tray by Sam)"', (() => { const k = mk(), l = {}; CS.skipSurprise(k); CS.step(k, l, [3, 4], 2, ['Sam', 'GM']); return /Party rolled 3 for initiative \(Owlbear Dice tray by Sam\)/.test(CS.entryText(l[1][0], k)) && /Goblins rolled 4 for initiative \(Owlbear Dice tray by GM\)/.test(CS.entryText(l[1][1], k)); })());
+    check('(k) which sides may act now: tie both, otherwise the winner then the other; round 0 the unsurprised side; none while rolling', (() => { const k = mk(); CS.skipSurprise(k); const n0 = CS.actingSides(k).length; CS.step(k, {}, [5, 2], 0, []); const a = CS.actingSides(k).join(); CS.advance(k); const b = CS.actingSides(k).join(); const t = mk(); CS.skipSurprise(t); CS.step(t, {}, [3, 3], 0, []); const s = mk(); CS.rollSurprise(s, 0, 1); CS.rollSurprise(s, 1, 2); return n0 === 0 && a === '0' && b === '1' && CS.actingSides(t).join() === '0,1' && CS.actingSides(s).join() === '0'; })());
+}
+
 const html = ['index.html', 'guide.html', 'js/app.js', 'css/toolkit.css'].map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
 check('no TSR or WotC marks, no em dashes in UI copy', !/TSR|Wizards of the Coast|ADVANCED D&D|—/.test(html.replace(credit, '')));
 
