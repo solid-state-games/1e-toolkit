@@ -27,7 +27,7 @@ input.tiny{width:4em;text-align:center}input[type=number]{width:5em}
 .themebtn{margin-left:.4em}
 
 /* ---------- hub ---------- */
-body.view-hub #app{padding:.6em .8em}
+body.view-hub #app{padding:.6em .8em;min-height:0}
 .hubhead{display:flex;align-items:center;justify-content:space-between;border-bottom:3px double var(--line);padding-bottom:.2em}
 .hubhead h1{font-size:20px;margin:0}
 .rolebadge{font-size:11px;border:1px solid var(--line);padding:0 .5em;text-transform:uppercase;letter-spacing:.08em}

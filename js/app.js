@@ -57,6 +57,7 @@ const Hub = (function () {
         TK.OBR.scene.onReadyChange(function (r) { if (r) refreshItems(); });
         TK.OBR.scene.items.onChange(function () { refreshItems(); });
         show(tab);
+        fitHeight();
         CombatUI.boot();
     }
     function shell() {
@@ -70,6 +71,15 @@ const Hub = (function () {
         $("app").innerHTML = h;
         document.querySelector(".tabs").addEventListener("click", function (e) { const b = e.target.closest("[data-tab]"); if (b) show(b.dataset.tab); });
         if (TK.role === "GM") { Enc.init($("enc")); Tre.init($("tre")); Com.init($("com")); CombatUI.initGm($("c-run")); } else CombatUI.initPlayer($("cbt"));
+    }
+    // The popover is as tall as its content (200 to 760 px, then it scrolls). OBR.action.setHeight; width stays as the manifest says.
+    // Not done for the sheet modal: the SDK cannot resize a modal that is open.
+    function fitHeight() {
+        const app = $("app"); if (!app || !window.ResizeObserver) return;
+        let t = null, last = 0;
+        const go = function () { const h = Math.max(200, Math.min(760, Math.ceil(app.getBoundingClientRect().height) + 8)); if (h !== last) { last = h; try { TK.OBR.action.setHeight(h); } catch (e) { console.warn(e); } } };
+        new ResizeObserver(function () { clearTimeout(t); t = setTimeout(go, 100); }).observe(app);
+        go();
     }
     function show(t) {
         tab = t;

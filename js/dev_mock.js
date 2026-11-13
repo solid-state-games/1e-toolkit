@@ -91,7 +91,7 @@ export default function makeMock(role) {
             getWidth: async () => 300, getHeight: async () => 100
         },
         contextMenu: { create: async () => {}, remove: async () => {} },
-        action: { setHeight: async () => {}, setWidth: async () => {}, open: async () => {}, close: async () => {} },
+        action: { setHeight: async h => { window.__actionHeight = h; }, getHeight: async () => window.__actionHeight || 760, setWidth: async () => {}, open: async () => {}, close: async () => {} },
         room: { getPermissions: async () => (load().grant ? ['CHARACTER_UPDATE'] : []), onPermissionsChange: () => () => {} },
         // dev only helpers used by the dev bar
         _dev: { toggleGrant() { const s = load(); s.grant = !s.grant; save(s); fire(); return s.grant; }, grant: () => !!load().grant,
