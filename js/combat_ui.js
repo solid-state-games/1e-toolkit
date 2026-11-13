@@ -94,14 +94,14 @@ const CombatUI = (function () {
             h += "<h4>Surprise (DMG p.61-62)</h4>";
             if (!CS.isOn(c, "cm.surprise")) h += '<p class="hint">Surprise is switched off in Restrictions.</p>';
             h += '<table class="grid"><tr><th>Side</th><th>Surprised on 1 to</th><th>d6</th><th>Result</th></tr>' + c.sd.map(function (s, i) {
-                const res = s.ra === 0 ? "cannot be surprised" : !s.sr ? "not rolled" : s.sr <= s.ra ? "surprised, " + s.sr + " (after the difference: " + s.sl + " segment" + (s.sl === 1 ? "" : "s") + ")" : "not surprised";
+                const res = s.ra === 0 ? "cannot be surprised" : !s.sr ? "not rolled" : s.sr <= s.ra ? "rolled " + s.sr + ": loses " + s.sl + " segment" + (s.sl === 1 ? "" : "s") + " after the difference" : "not surprised";
                 return "<tr><td>" + esc(s.n) + '</td><td><input type="number" min="0" max="6" class="cmnum" data-range="' + i + '" value="' + s.ra + '"></td><td>' + (s.ra === 0 ? "--" : (s.sr ? "<b>" + s.sr + "</b> " : "") + rollCtl("sur", i)) + "</td><td>" + res + "</td></tr>";
             }).join("") + "</table>";
             if (CS.surpriseReady(c) && CS.maxSl(c)) {
                 const sd = c.sd[0].sl ? 0 : 1;
                 h += '<p class="hint">Dexterity reaction shortens only that character\'s own lost segments (DMG p.62, p.71; PHB p.11):</p><ul class="chips">' + c.sd[sd].m.map(function (n) { const d = dexOf(c.ro[n]); return "<li>" + esc(nameOf(c.ro[n])) + " (" + (d ? "DEX " + d : "no sheet, no adjustment") + "): " + CS.indivSegs(c, sd, d || 10) + "</li>"; }).join("") + "</ul>";
             }
-            h += '<div class="row"><button type="button" class="btn ghost small" data-act="skipsur">No surprise: go to round 1</button></div>';
+            h += '<div class="row"><button type="button" class="btn ghost small" data-act="skipsur">Skip surprise (detected in advance): go to round 1</button></div>';
         } else {
             h += "<h4>Initiative (DMG p.62-63)</h4>";
             if (CS.isOn(c, "cm.initiative")) {
