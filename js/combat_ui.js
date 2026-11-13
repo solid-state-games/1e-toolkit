@@ -129,6 +129,8 @@ const CombatUI = (function () {
     }
     // the token's attack count (item metadata; GM only). null removes it.
     function setCs(id, v) { return TK.OBR.scene.items.updateItems([id], function (d) { if (v) d[0].metadata[CA.CS] = v; else delete d[0].metadata[CA.CS]; }).catch(function (e) { say(e.message, "ERROR"); }); }
+    // the attack counts belong to one combat: clear them when it starts and when it ends, so a stamp from an earlier fight can never match
+    function clearCs(ids) { return ids.length ? TK.OBR.scene.items.updateItems(ids, function (d) { d.forEach(function (x) { delete x.metadata[CA.CS]; }); }).catch(function (e) { say(e.message, "ERROR"); }) : Promise.resolve(); }
     function dismissAttack() { const q = pendAtk(); if (q) mutate(function (c) { c.ak = c.ak || {}; c.ak[q.pid] = q.n; }); }
     function attackHtml(c) {
         const q = pendAtk(); if (!q) return "";
@@ -174,6 +176,7 @@ const CombatUI = (function () {
         if (wait && wait.key === sp.key) return;
         const w = wait = Object.assign({ vals: [], who: [], base: null }, sp);
         everyone().then(function (list) { if (wait === w) w.base = CS.traySnap(list); });   // what is there now is stale; only later rolls count
+        setTimeout(render, 0);   // show the waiting line now that there is a wait
     }
     function trayEvent() { reqEvent(); if (!wait || !wait.base) return; clearTimeout(timer); timer = setTimeout(trayCheck, SETTLE); }
     async function trayCheck() {
@@ -258,7 +261,7 @@ const CombatUI = (function () {
             nc.op = draft.op; nc.rs = draft.rs; [0, 1].forEach(function (i) { nc.sd[i].et = draft.et[i]; if (draft.r[i] !== undefined) nc.sd[i].ov = 1; });
             const logs = {};
             if (!CS.isOn(nc, "cm.surprise") || surMode === "none") CS.noSurprise(nc, logs);
-            msg = ""; setupOpen = false;
+            msg = ""; setupOpen = false; await clearCs(ids);
             await save(nc, logs, [], []); await TK.OBR.scene.setMetadata((function () { const o = {}; o[CS.PRE] = undefined; return o; })()).catch(function (er) { say(er.message, "ERROR"); }); render();
         } else if (a === "primary") {
             if (!c) return;
@@ -285,6 +288,7 @@ const CombatUI = (function () {
         const c = cur.c; if (!c || !window.confirm("End combat? The log is saved to a text file and cleared from the scene.")) return;
         const text = CS.exportText(c, cur.logs, cur.sum, function (n) { return nameOf(c.ro[n]); });
         const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" })); a.download = "combat-log-round-" + c.rd + ".txt"; document.body.appendChild(a); a.click(); a.remove();
+        await clearCs(c.ro);
         try { await TK.OBR.scene.setMetadata(CS.clearPatch(cur.meta)); } catch (er) { say(er.message, "ERROR"); return; }
         msg = ""; setupOpen = null; surMode = "roll"; ingest(Object.keys(cur.meta).reduce(function (o, k) { if (k !== CS.KEY && k.indexOf(CS.LOGP) !== 0) o[k] = cur.meta[k]; return o; }, {}));
     }

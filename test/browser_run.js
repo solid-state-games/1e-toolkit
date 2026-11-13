@@ -405,7 +405,7 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
         const card = await g.ev('document.querySelector("#c-run .cmatk")?document.querySelector("#c-run .cmatk").innerText:""');
         check('attack: dragging from Aldric to Goblin 3 makes the GM card appear with who asked, the weapon, target AC from the MM (Goblin AC 6) and the number needed', /Aldric/.test(card) && /Goblin 3/.test(card) && /asked by Dev Player/.test(card) && /Needs \d+ or more on a d20/.test(card) && await g.ev('document.querySelector("[data-atk=ac]").value') === '6', card.replace(/\s+/g, ' '));
         await shotBoth(g, 'attack-gm-card', { full: true }, 'combat-4-');
-        await g.ev('document.getElementById("cm-atk-in").value=14'); await g.click('[data-act="atkroll"]'); await g.sleep(600);
+        await g.ev('document.getElementById("cm-atk-in-0").value=14'); await g.click('[data-act="atkroll"]'); await g.sleep(600);
         await g.ev('document.getElementById("cm-log").open=true'); await g.sleep(200);
         const rw = await g.ev('document.querySelector("#c-run .rollwin").innerText');
         check('attack: the d20 is entered, the result is logged as kind 2 and shown as "Aldric ... attacks Goblin 3: rolled 14, needs N: hit or miss" with no damage', /attacks Goblin 3: rolled 14, needs -?\d+: (hit|miss)/.test(rw) && (await g.ev('CombatUI._state().logs[1].filter(function(e){return e[1]===2}).length')) === 1 && !(await g.ev('!!document.querySelector("#c-run .cmatk")')), rw.replace(/\s+/g, ' '));
@@ -420,7 +420,8 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
         check('attack: dismissed, the card is gone and nothing was logged', await g.ev('!document.querySelector("#c-run .cmatk")') && (await g.ev('CombatUI._state().logs[1].filter(function(e){return e[1]===2}).length')) === 1);
         // tray: waiting line names the owner of the attacker, the d20 comes from them
         await g.click('[data-act="cog"]'); await g.set('#cm-rs', '2'); await g.sleep(300); await g.click('[data-act="cog"]'); await g.sleep(300);
-        await ap.ev('window.OBRX._dev.drag("t1","t3")'); await g.sleep(1200);
+        await ap.ev('window.OBRX._dev.drag("t1","t3")'); await g.sleep(1000);
+        check('attack allowance: Aldric (1 attack a round) is refused a second attack in the round until the GM overrides', /used all 1 attack this round/.test(await g.ev('document.querySelector("#c-run .cmatk").innerText'))); await g.click('[data-act="atkov"]'); await g.sleep(1000);
         const tw = await g.ev('document.querySelector("#c-run .cmatk").innerText');
         check('attack: with the Dice tray the card waits for the attacker\'s owner (Aldric\'s player), not the GM', /Waiting for Aldric \(your token\) to roll a d20 in the Dice tray/.test(tw), tw.replace(/\s+/g, ' '));
         await g.ev('window.OBRX._dev.setTray("dev-gm", [20])'); await g.sleep(1800);
@@ -440,6 +441,65 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
         await g.ev('window.confirm=function(){return true};window.__dl=null;var oc=URL.createObjectURL;URL.createObjectURL=function(b){window.__dl=b;return oc.call(URL,b)}');
         await g.click('[data-act="end"]'); await g.sleep(500);
         check('combat 4: End combat clears the undo stack and the side choices too', await g.ev('JSON.stringify(Object.keys(JSON.parse(localStorage.getItem("toolkit-dev-scene")).meta))') === '[]');
+        await g.click('[data-tab="sheets"]');
+    }
+    {   // ---------- combat 5: attacks per round (1 of 2, monster routine), the cs stamp, acted dots ----------
+        await g.ev('(function(){var s=JSON.parse(localStorage.getItem("toolkit-dev-scene"));s.meta={};s.pm={};localStorage.setItem("toolkit-dev-scene",JSON.stringify(s))})()');
+        await g.ev('window.OBRX.scene.items.updateItems(["t3"],function(d){d[0].name="Ape, carnivorous"});window.OBRX.scene.items.updateItems(["t2"],function(d){var s=SheetRules.blank();Object.assign(s,{nm:"Brenna",race:"Human",cl:["Fighter"],lv:[13],sc:[16,10,10,14,15,12],pf:["Sword, Long & scabbard","Bow, long"]});d[0].metadata["io.github.solid-state-games.1e-toolkit/sheet"]=s})'); await g.sleep(400);
+        await g.click('[data-tab="com"]'); await g.click('[data-top="run"]'); await g.sleep(300);
+        await g.set('#cm-rs', '1'); await g.set('#cm-sm', 'none'); await g.click('[data-act="start"]'); await g.sleep(600);
+        const gs = () => g.ev('JSON.stringify(CombatUI._state().c)').then(JSON.parse);
+        await g.send('Page.bringToFront');   // a hidden tab throttles timers to 1 s, which would starve the dot redraw
+        const dots = async () => { await g.sleep(700); return g.ev('Array.from(document.querySelectorAll("#dev-map .dev-dot")).map(function(d){return d.dataset.state}).sort().join()'); };
+        await g.ev('document.getElementById("cm-in-0").value=6;document.getElementById("cm-in-1").value=2'); await g.click('[data-act="primary"]'); await g.sleep(500);
+        check('combat 5: no dots before anyone has attacked or finished acting', await dots() === '' && await g.ev('!document.getElementById("dev-map")'));
+        const typed = async v => { for (let j = 0; j < v.length; j++) await g.ev('document.getElementById("cm-atk-in-' + j + '").value=' + v[j]); await g.click('[data-act="atkroll"]'); await g.sleep(700); };
+        await g.ev('window.OBRX._dev.drag("t2","t3")'); await g.sleep(700);
+        check('attack allowance: a 13th level fighter has two attacks (PHB p.25): the card says "Attack 1 of 2"', /Attack 1 of 2/i.test(await g.ev('document.querySelector("#c-run .cmatk h4").innerText')));
+        await shotBoth(g, 'attack-1-of-2', { full: true }, 'combat-5-');
+        await typed([15]); await g.sleep(300);
+        check('attack allowance: the first attack is logged and the token\'s cs records 1 used (round stamp 100) and the allowance; an open dot shows on the token', await g.ev('window.OBRX.scene.items.getItems(["t2"]).then(function(a){var k=a[0].metadata["io.github.solid-state-games.1e-toolkit/cs"];return JSON.stringify([k.rs,k.at,k.mx])})') === '[100,1,2]' && await dots() === 'some', await dots() + ' ' + await g.ev('window.OBRX.scene.items.getItems(["t2"]).then(function(a){return JSON.stringify(a[0].metadata)})'));
+        await g.ev('window.OBRX._dev.drag("t2","t3")'); await g.sleep(700);
+        check('attack allowance: the second attack says "Attack 2 of 2"', /Attack 2 of 2/i.test(await g.ev('document.querySelector("#c-run .cmatk h4").innerText')));
+        await typed([4]); await g.sleep(300);
+        check('attack allowance: after the last attack the dot is filled (done)', await dots() === 'done');
+        await shotBoth(g, 'dots', { full: true }, 'combat-5-');
+        await g.ev('window.OBRX._dev.drag("t2","t3")'); await g.sleep(700);
+        const refuse = await g.ev('document.querySelector("#c-run .cmatk").innerText');
+        check('attack allowance: a third attack is refused with the reason and an Override button; Dismiss clears it', /used all 2 attacks this round \(2 of 2\)/.test(refuse) && /Override and attack/i.test(refuse));
+        await g.click('[data-act="atkno"]'); await g.sleep(400);
+        await g.ev('window.OBRX._dev.drag("t2","t3")'); await g.sleep(700); await g.click('[data-act="atkov"]'); await g.sleep(300);
+        await typed([12]); await g.sleep(300);
+        check('attack allowance: with the GM override the third attack goes through and the log says "GM override"', /GM override/.test(await g.ev('(function(){document.getElementById("cm-log").open=true;return document.querySelector("#c-run .rollwin").innerText})()')));
+        await g.click('[data-act="undo"]'); await g.sleep(500);
+        check('attack allowance: undo takes the override attack back out of the log and restores the token\'s count (2 used) so the dot stays filled', !/GM override/.test(await g.ev('document.querySelector("#c-run .rollwin").innerText')) && await g.ev('window.OBRX.scene.items.getItems(["t2"]).then(function(a){return a[0].metadata["io.github.solid-state-games.1e-toolkit/cs"].at})') === 2 && await dots() === 'done');
+        await g.click('[data-act="undo"]'); await g.sleep(500);
+        check('attack allowance: undoing the second attack puts the count back to 1 and the dot back to open', await g.ev('window.OBRX.scene.items.getItems(["t2"]).then(function(a){return a[0].metadata["io.github.solid-state-games.1e-toolkit/cs"].at})') === 1 && await dots() === 'some', await dots() + ' at=' + await g.ev('window.OBRX.scene.items.getItems(["t2"]).then(function(a){return JSON.stringify(a[0].metadata["io.github.solid-state-games.1e-toolkit/cs"])})') + ' undo=' + await g.ev('JSON.stringify(CombatUI._state().undo.map(function(u){return [u.l,u.x]}))'));
+        // dots off in set-up
+        await g.click('[data-act="cog"]'); await g.click('#cm-dots'); await g.sleep(600);
+        check('dots: the set-up switch turns the dots off on this browser, and on again', await dots() === '' && (await g.click('#cm-dots'), await g.sleep(600), await dots() === 'some'), await dots());
+        await g.click('[data-act="cog"]'); await g.sleep(200);
+        // the monster: a routine of 3 attacks in one drag
+        await g.click('[data-act="primary"]'); await g.sleep(400);
+        await g.ev('window.OBRX._dev.drag("t3","t2")'); await g.sleep(700);
+        const mc = await g.ev('document.querySelector("#c-run .cmatk").innerText');
+        check('monster routine: the Ape (MM: 3 attacks, 1-4/1-4/1-8) shows "Routine 1 of 1" with three d20 rows, one per attack form', /Routine 1 of 1/i.test(mc) && /1-4: needs/.test(mc) && /1-8: needs/.test(mc) && await g.ev('document.querySelectorAll("#c-run .cmforms li").length') === 3 && await g.ev('document.querySelectorAll("#c-run [id^=cm-atk-in-]").length') === 3, mc.replace(/\s+/g, ' '));
+        await shotBoth(g, 'monster-three-attacks', { full: true }, 'combat-5-');
+        await typed([14, 3, 18]);
+        const log = await g.ev('(function(){document.getElementById("cm-log").open=true;return document.querySelector("#c-run .rollwin").innerText})()');
+        check('monster routine: one drag logs three attacks, each with its own roll and result', (log.match(/Ape, carnivorous attacks Brenna/g) || []).length === 3 && /\(1-8\): rolled 18/.test(log), log.replace(/\s+/g, ' ').slice(-300));
+        await g.ev('window.OBRX._dev.drag("t3","t2")'); await g.sleep(700);
+        check('monster routine: a second routine in the round is refused (used all 1 routine)', /used all 1 routine this round/.test(await g.ev('document.querySelector("#c-run .cmatk").innerText')));
+        await g.click('[data-act="atkno"]'); await g.sleep(300);
+        // end of round clears the dots by the lazy reset; End combat removes them
+        await g.click('[data-act="primary"]'); await g.sleep(500);
+        check('dots: when both sides have acted (end of round) every dot is filled; the new round clears them without any write to the tokens', await (async () => { const d = (await dots()).split(','); return d.length === (await gs()).ro.length && d.every(x => x === 'done'); })() && (await g.click('[data-act="primary"]'), await g.sleep(700), await dots() === '' && (await gs()).rd === 2), await dots());
+        await g.ev('window.OBRX._dev.drag("t2","t3")'); await g.sleep(500);
+        await g.click('[data-act="atkno"]'); await g.sleep(300);
+        await g.ev('window.confirm=function(){return true}');
+        await g.click('[data-act="end"]'); await g.sleep(700);
+        check('dots: End combat leaves no dots', await g.ev('!document.getElementById("dev-map")'));
+        await g.ev('window.OBRX.scene.items.updateItems(["t2"],function(d){delete d[0].metadata["io.github.solid-state-games.1e-toolkit/sheet"];delete d[0].metadata["io.github.solid-state-games.1e-toolkit/cs"]});window.OBRX.scene.items.updateItems(["t3"],function(d){d[0].name="Goblin NPC (GM token)";delete d[0].metadata["io.github.solid-state-games.1e-toolkit/cs"]})'); await g.sleep(300);
         await g.click('[data-tab="sheets"]');
     }
     {   // the action popover follows its content height
