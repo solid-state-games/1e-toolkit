@@ -320,6 +320,15 @@ Prone: set by the GM switch on the token or by a result (pummel "off balance", o
 | A23 | Ties with weapons | DMG p.63, p.66 | Tied initiative: blows are simultaneous, except when both use weapons: lower speed first. Weaponless vs weaponless stays simultaneous | Always simultaneous |
 | A24 | Spell versus saved attack | DMG p.65, p.70 | A spell hit "not saved against" interrupts; a save made means no interruption. The save is made when the attack is resolved | Any spell attack interrupts |
 
+### 7.1 Rulings (TB, 2026-11-13)
+
+TB took every recommended reading above, unless Gygax's own forum answers clarified it. Search (EN World "Q&A with Gary Gygax", Dragonsfoot Q&A threads, 13 Nov 2026) found:
+
+- **A1 surprise: text.** Gygax confirmed the difference reading ("Your understanding is correct", EN World Q&A post #2,013, 3 Mar 2004). With the text, both examples and PHB p.103, that settles it. Encounter Roller now matches Combat Calc.
+- **A23 ties, refined.** Same post: where initiative is tied, the longer weapon strikes first in the initial round (matches DMG p.66, longer reach first when closing). He adds his group seldom used the weapon speed comparison, which is still correct as printed. So: tie in the round melee is joined, longer weapon first; later rounds, lower speed factor first (I07). He also notes a lance does not automatically beat a spear or pole arm of 8 ft or less on a charge.
+- **A10 charge.** A Gygax answer quoted on Dragonsfoot allows two attacks after a short charge and one after a long one. It's a reported table ruling, not book text, and the primary post wasn't found. Not in the defaults; it could become an optional toggle later.
+- **A11, A12 and the rest:** no Gygax answer found. Recommended readings stand.
+
 ## 8. Data model
 
 Goal: small, rebuilt from rules rather than stored. Owlbear metadata is limited to 16 kB per object (room, scene, item) per the studio notes (docs.owlbear.rodeo returned 403; confirm in a real room). Keep a 14 kB ceiling per object. Namespace stays `io.github.solid-state-games.1e-toolkit` (never change it); new keys sit under it.
