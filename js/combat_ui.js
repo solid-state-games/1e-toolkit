@@ -6,8 +6,8 @@
    player.getMetadata/onChange, popover.close (SDK 3.1.0). Dice tray: the Owlbear Dice extension writes rodeo.owlbear.dice/* to the roller's
    player metadata; a step that needs a d6 waits for the first new single d6 from whoever may roll it (CombatState.rollerFor). */
 const CombatUI = (function () {
-    const CS = CombatState, SETTLE = 1200;
-    let cur = { c: null, logs: {}, sum: [], meta: {} }, items = [], players = [], gmRoot = null, playerRoot = null, msg = "", hist = [], wait = null, timer = null, removedExtra = [];
+    const CS = CombatState, CA = CombatAttack, SETTLE = 1200;
+    let cur = { c: null, logs: {}, sum: [], meta: {} }, items = [], players = [], gmRoot = null, playerRoot = null, msg = "", wait = null, timer = null, removedExtra = [], reqs = [], atk = { key: "", ov: false, wi: 0 };
     let draft = { n: ["Party", "Foes"], r: [undefined, undefined], et: [0, 0], side: {}, op: 0, rs: 0 }, setupOpen = null, rOpen = false, lOpen = false, surMode = "roll";
     const own = function (i) { return (i.metadata || {})[SheetRules.OWNER_KEY]; };
     const byId = function (id) { return items.filter(function (x) { return x.id === id; })[0]; };
@@ -16,6 +16,9 @@ const CombatUI = (function () {
     const dexOf = function (id) { const sh = sheetOf(byId(id)); return sh && sh.sc && sh.sc[3] ? sh.sc[3] : null; };
     // owner = the player the GM assigned, else the player who placed it (as the sheet works it out); GM-placed tokens have none
     const ownerOf = function (it) { return own(it) || (players.some(function (p) { return p.id === it.createdUserId; }) ? it.createdUserId : ""); };
+    // before a combat: the GM's choice (right-click menu or set-up), kept in the scene key `pre`, else the default
+    const pre = function () { return (cur.meta || {})[CS.PRE] || {}; };
+    const sideFor = function (it) { return pre()[it.id] !== undefined ? pre()[it.id] : defSide(it); };
     const defSide = function (it) { return sheetOf(it) || ownerOf(it) ? 0 : 1; };
     const inf = function (t) { return t ? ' <span class="inf" title="' + esc(t) + '" aria-label="' + esc(t) + '">i</span>' : ""; };
     const S = function () { return cur.c || draft; };
@@ -28,12 +31,16 @@ const CombatUI = (function () {
     function derived() {
         const c = cur.c, groups = [[], []];
         if (c) [0, 1].forEach(function (i) { c.sd[i].m.forEach(function (n) { const it = byId(c.ro[n]); if (it) groups[i].push(memberOf(it)); }); });
-        else items.forEach(function (it) { const s = draft.side[it.id] !== undefined ? draft.side[it.id] : defSide(it); if (s < 2) groups[s].push(memberOf(it)); });
+        else items.forEach(function (it) { const s = sideFor(it); if (s < 2) groups[s].push(memberOf(it)); });
         return CS.deriveRanges(groups.map(function (g, i) { return { members: g, elfTick: !!(c ? c.sd[i].et : draft.et[i]) }; }));
     }
 
     /* ----- shared: data in, log out ----- */
-    function ingest(meta) { cur = Object.assign({ meta: meta || {} }, CS.read(meta)); if (!cur.c) { hist = []; wait = null; } render(); }
+    function ingest(meta) {
+        cur = Object.assign({ meta: meta || {} }, CS.read(meta)); if (!cur.c) wait = null; render();
+        // a token added or moved by right-click while surprise is still to roll: refresh the derived ranges (not the GM's overrides)
+        const c = cur.c; if (TK.role === "GM" && c && c.rd === 0 && !CS.surpriseReady(c) && items.length) { const d = derived(); if (d.some(function (x, i) { return !c.sd[i].ov && c.sd[i].ra !== x.ra; })) mutate(function (c) { CS.applyRanges(c, derived()); }); }
+    }
     function rollWinHtml(c, player) {
         const list = CS.visible(cur.logs[c.rd] || []).filter(function (e) { return !player || e[1] !== 9; }); // players don't see GM undos
         return '<div class="rollwin"><h4>' + (c.rd === 0 ? "Surprise rolls" : "Round " + c.rd + " rolls") + "</h4>" + (list.length ? "<ol>" + list.map(function (e) { return "<li>" + (e[0] ? "<i>segment " + e[0] + "</i> " : "") + esc(CS.entryText(e, c)) + "</li>"; }).join("") + "</ol>" : '<p class="muted small">No rolls yet this round.</p>') + "</div>";
@@ -56,28 +63,79 @@ const CombatUI = (function () {
     }
 
     /* ----- writing (GM only) ----- */
-    async function save(c, logs, sum) {
+    async function save(c, logs, sum, stack) {
         if (TK.role !== "GM") return;
-        const rm = CS.fold(c, logs, sum).concat(removedExtra); removedExtra = [];
-        const p = CS.patch(c, logs, sum, rm), meta = Object.assign({}, cur.meta);
+        stack = stack || cur.undo.slice();
+        const rm = CS.fold(c, logs, sum, undefined, stack).concat(removedExtra); removedExtra = [];
+        const p = CS.patch(c, logs, sum, rm, stack), meta = Object.assign({}, cur.meta);
         await TK.OBR.scene.setMetadata(p);
         Object.keys(p).forEach(function (k) { if (p[k] === undefined) delete meta[k]; else meta[k] = p[k]; });
         ingest(meta);
     }
-    // fn(c, logs, sum) edits copies; returns an optional message
+    // fn(c, logs, sum, stack) edits copies; returns an optional message
     async function mutate(fn) {
-        const c = JSON.parse(JSON.stringify(cur.c)), logs = JSON.parse(JSON.stringify(cur.logs)), sum = JSON.parse(JSON.stringify(cur.sum));
-        msg = fn(c, logs, sum) || "";
-        try { await save(c, logs, sum); } catch (e) { say(e.message, "ERROR"); }
+        const c = JSON.parse(JSON.stringify(cur.c)), logs = JSON.parse(JSON.stringify(cur.logs)), sum = JSON.parse(JSON.stringify(cur.sum)), stack = JSON.parse(JSON.stringify(cur.undo));
+        msg = fn(c, logs, sum, stack) || "";
+        try { await save(c, logs, sum, stack); } catch (e) { say(e.message, "ERROR"); }
         render();
     }
     const effSrc = function (c) { return CS.stepKind(c) === "sur" && c.rd === 0 && surMode === "earlier" ? 3 : c.rs; };
     function runStep(vals, src, who) {
-        return mutate(function (c, logs) {
-            const label = CS.primary(c), snap = CS.takeSnap(c, logs), r = CS.step(c, logs, vals, src, who);
+        return mutate(function (c, logs, sum, stack) {
+            const label = CS.primary(c), before = CS.takeSnap(c, logs), r = CS.step(c, logs, vals, src, who);
             if (!r.ok) return "That step needs a roll first.";
-            hist.push({ snap: snap, label: label }); if (hist.length > 30) hist.shift();
+            CS.pushUndo(stack, before, logs, label);
         });
+    }
+
+    /* ----- attacks: requests arrive in a player's own metadata (js/combat_menus.js writes them); the GM resolves them here ----- */
+    const pendAtk = function () {
+        const c = cur.c; if (!c || TK.role !== "GM") return null;
+        return reqs.filter(function (q) { return q.n > ((c.ak || {})[q.pid] || 0); })[0] || null;
+    };
+    function scanRequests(list) {
+        reqs = list.filter(function (p) { const r = (p.metadata || {})[CA.KEY]; return r && r.n && r.a && r.t; }).map(function (p) { const r = p.metadata[CA.KEY]; return { pid: p.id, pname: p.name, n: r.n, a: r.a, t: r.t }; });
+        const q = pendAtk(); if (q && atk.key !== q.pid + ":" + q.n) atk = { key: q.pid + ":" + q.n, ov: false, wi: 0 };
+        render();
+    }
+    async function reqEvent() { if (TK.role === "GM") scanRequests(await everyone()); }
+    // who rolls the d20: the attacker's owner, else the GM (CombatState.rollerFor by roster index; the same for later single rolls)
+    function atkRoller(c, A) { const n = c.ro.indexOf(A.id); return n >= 0 ? rollerFor(c, { token: n }) : [ownerOf(A) || TK.me]; }
+    function atkModel(c, q) {
+        const A = byId(q.a), T = byId(q.t); if (!A || !T) return null;
+        const af = CA.facts(A), tf = CA.facts(T), names = {}; names[A.id] = A.name || "Unnamed token"; names[T.id] = T.name || "Unnamed token";
+        const ac = atk.ac !== undefined && atk.ac !== "" ? Number(atk.ac) : tf.ac, bonus = Number(atk.bonus) || 0;
+        const calc = CA.need(af, atk.wi || 0, ac, tf.type, bonus), need = calc !== null ? calc : (atk.need !== undefined && atk.need !== "" ? Number(atk.need) : null);
+        return { A: A, T: T, af: af, tf: tf, names: names, ac: ac, bonus: bonus, need: need, auto: calc !== null, probs: CA.problems(c, A.id, T.id, names) };
+    }
+    function resolveAttack(roll, src, who) {
+        const c = cur.c, q = pendAtk(); if (!q) return;
+        const m = atkModel(c, q); if (!m || m.need === null) { msg = "Enter the number needed on the d20."; render(); return; }
+        mutate(function (c, logs, sum, stack) {
+            const before = CS.takeSnap(c, logs), hit = roll >= m.need, ai = c.ro.indexOf(m.A.id), ti = c.ro.indexOf(m.T.id);
+            const e = CS.entry(c.sg, 2, ai, roll, m.need, src | (hit ? 4 : 0), CA.text(m.names[m.A.id], m.names[m.T.id], roll, m.need, hit, m.probs.length > 0), who && who[0]); e[3] = ti;
+            CS.logAdd(logs, c.rd, e); c.ak = c.ak || {}; c.ak[q.pid] = q.n;
+            CS.pushUndo(stack, before, logs, "Attack: " + m.names[m.A.id]);
+        });
+    }
+    function dismissAttack() { const q = pendAtk(); if (q) mutate(function (c) { c.ak = c.ak || {}; c.ak[q.pid] = q.n; }); }
+    function attackHtml(c) {
+        const q = pendAtk(); if (!q) return "";
+        const m = atkModel(c, q);
+        let h = '<div class="cmatk"><h4>' + ic("sword") + "Attack</h4>";
+        if (!m) return h + '<p>One of the tokens is no longer on the scene.</p><button type="button" class="btn ghost small" data-act="atkno">Dismiss</button></div>';
+        h += "<p><b>" + esc(m.names[m.A.id]) + "</b> attacks <b>" + esc(m.names[m.T.id]) + "</b> <span class=\"muted\">(asked by " + esc(q.pname) + ")</span></p>";
+        if (m.probs.length && !atk.ov) return h + "<ul class=\"cmprob\">" + m.probs.map(function (p) { return "<li>" + esc(p.msg) + "</li>"; }).join("") + '</ul><div class="cmrow"><button type="button" class="btn small" data-act="atkov">Override and attack</button><button type="button" class="btn ghost small" data-act="atkno">Dismiss</button></div></div>';
+        h += '<div class="ctl">';
+        if (m.af.kind === "pc") h += '<label>Weapon <select data-atk="wi">' + (m.af.weapons.length ? m.af.weapons.map(function (w, i) { return opt(i, w.name, atk.wi || 0); }).join("") : opt(0, "No weapon on the sheet", 0)) + "</select></label>";
+        else h += '<label>Attacker <span>' + (m.af.kind === "mon" ? esc(m.af.mm) + ", " + esc(m.af.page) + ", HD column " + m.af.col : "no sheet or MM entry") + "</span></label>";
+        h += '<label>Target AC <input type="number" class="cmnum" data-atk="ac" value="' + (m.ac === null || m.ac === undefined || isNaN(m.ac) ? "" : m.ac) + '"></label><label>Bonus to hit <input type="number" class="cmnum" data-atk="bonus" value="' + m.bonus + '"></label>';
+        if (!m.auto) h += '<label>Needs on d20 <input type="number" class="cmnum" data-atk="need" value="' + (atk.need !== undefined ? esc(atk.need) : "") + '"></label>';
+        h += "</div><p><b>" + (m.need === null ? "Needs: type the AC or the number" : "Needs " + m.need + " or more on a d20") + "</b>" + (m.tf.why ? " " + esc(m.tf.why) : "") + "</p>";
+        const src = c.rs;
+        if (src === 2) h += waitHtml(c) + '<div class="cmrow"><button type="button" class="btn ghost small" data-act="atksheet">' + ic("dice") + "Roll in the sheet instead</button> ";
+        else h += '<div class="cmrow"><button type="button" class="btn prim" data-act="atkroll">' + ic("dice") + (src === 1 ? "Apply the d20" : "Roll d20") + "</button> " + (src === 1 ? '<label>d20 <input type="number" min="1" max="20" id="cm-atk-in" class="cmnum"></label> ' : "");
+        return h + '<button type="button" class="btn ghost small" data-act="atkno">Dismiss</button></div></div>';
     }
 
     /* ----- Dice tray: wait for the first new d6 from whoever may roll it ----- */
@@ -85,32 +143,38 @@ const CombatUI = (function () {
         const O = TK.OBR, me = { id: TK.me, name: TK.name || "GM", metadata: await O.player.getMetadata() };
         return [me].concat(await O.party.getPlayers());
     }
+    // What the tray is being waited on for right now: an attack's d20 first, else the step's d6 (one per side that must roll)
+    function waitSpec(c) {
+        const q = pendAtk(), m = q && c.rs === 2 ? atkModel(c, q) : null;
+        if (m && (!m.probs.length || atk.ov)) return { key: ["a", q.pid, q.n, atk.ov].join(":"), max: 20, wants: [atkRoller(c, m.A)], labels: [""], name: function () { return m.names[m.A.id]; }, done: function (v, w) { resolveAttack(v[0], 2, w); } };
+        const nd = CS.needs(c);
+        if (nd.length && effSrc(c) === 2) return { key: [c.rd, c.ph, c.sg, c.rs, surMode].join(":"), max: 6, wants: nd.map(function (i) { return rollerFor(c, { side: i }); }), labels: nd.map(function (i) { return c.sd[i].n; }),
+            name: function (id, j) { const i = nd[j], n = c.sd[i].m.filter(function (k) { const it = byId(c.ro[k]); return it && ownerOf(it) === id; })[0]; return n !== undefined ? nameOf(c.ro[n]) : null; }, done: function (v, w) { runStep(v, 2, w); } };
+        return null;
+    }
     function ensureWait() {
-        const c = cur.c, nd = c ? CS.needs(c) : [];
-        if (!c || !nd.length || effSrc(c) !== 2 || TK.role !== "GM") { wait = null; return; }
-        const key = [c.rd, c.ph, c.sg, c.rs, surMode].join(":");
-        if (wait && wait.key === key) return;
-        const w = wait = { key: key, nd: nd, vals: [], who: [], wants: nd.map(function (i) { return rollerFor(c, { side: i }); }), base: null };
+        const c = cur.c, sp = c && TK.role === "GM" ? waitSpec(c) : null;
+        if (!sp) { wait = null; return; }
+        if (wait && wait.key === sp.key) return;
+        const w = wait = Object.assign({ vals: [], who: [], base: null }, sp);
         everyone().then(function (list) { if (wait === w) w.base = CS.traySnap(list); });   // what is there now is stale; only later rolls count
     }
-    function trayEvent() { if (!wait || !wait.base) return; clearTimeout(timer); timer = setTimeout(trayCheck, SETTLE); }
+    function trayEvent() { reqEvent(); if (!wait || !wait.base) return; clearTimeout(timer); timer = setTimeout(trayCheck, SETTLE); }
     async function trayCheck() {
         const w = wait; if (!w || !w.base) return;
         const list = await everyone(); if (wait !== w) return;
-        for (let p = CS.trayPick(w.base, list, w.wants.map(function (x, j) { return w.vals[j] === undefined ? x : null; })); p; p = CS.trayPick(w.base, list, w.wants.map(function (x, j) { return w.vals[j] === undefined ? x : null; }))) { w.vals[p.j] = p.value; w.who[p.j] = p.name; }
-        if (w.nd.every(function (x, j) { return w.vals[j] !== undefined; })) { wait = null; runStep(w.vals, 2, w.who); } else render();
+        const left = function () { return w.wants.map(function (x, j) { return w.vals[j] === undefined ? x : null; }); };
+        for (let p = CS.trayPick(w.base, list, left(), w.max); p; p = CS.trayPick(w.base, list, left(), w.max)) { w.vals[p.j] = p.value; w.who[p.j] = p.name; }
+        if (w.wants.every(function (x, j) { return w.vals[j] !== undefined; })) { wait = null; w.done(w.vals, w.who); } else render();
     }
     function waitHtml(c) {
         const w = wait; if (!w) return "";
-        return w.nd.map(function (i, j) {
-            if (w.vals[j] !== undefined) return '<p class="cmwait">' + esc(c.sd[i].n) + ": got " + w.vals[j] + " from " + esc(w.who[j]) + ".</p>";
-            const ids = w.wants[j], names = ids.map(function (id) {
-                if (id === TK.me) return null;
-                const n = c.sd[i].m.filter(function (k) { const it = byId(c.ro[k]); return it && ownerOf(it) === id; })[0], p = players.filter(function (x) { return x.id === id; })[0];
-                return n !== undefined ? nameOf(c.ro[n]) : p ? p.name : "a player";
-            });
-            const who = names[0] === null ? "the GM's d6" : names.join(" or ") + " to roll a d6 in the Dice tray";
-            return '<p class="cmwait">' + ic("wait") + "<span>" + (w.nd.length > 1 ? esc(c.sd[i].n) + ": " : "") + "Waiting for " + esc(who) + "</span></p>";
+        const die = "d" + w.max;
+        return w.wants.map(function (ids, j) {
+            if (w.vals[j] !== undefined) return '<p class="cmwait">' + (w.labels[j] ? esc(w.labels[j]) + ": " : "") + "got " + w.vals[j] + " from " + esc(w.who[j]) + ".</p>";
+            const names = ids.map(function (id) { if (id === TK.me) return null; const p = players.filter(function (x) { return x.id === id; })[0]; return w.name(id, j) || (p ? p.name : "a player"); });
+            const who = names[0] === null ? "the GM's " + die : names.join(" or ") + " to roll a " + die + " in the Dice tray";
+            return '<p class="cmwait">' + ic("wait") + "<span>" + (w.wants.length > 1 && w.labels[j] ? esc(w.labels[j]) + ": " : "") + "Waiting for " + esc(who) + "</span></p>";
         }).join("");
     }
 
@@ -118,7 +182,7 @@ const CombatUI = (function () {
     const opt = function (v, t, sel) { return '<option value="' + v + '"' + (String(v) === String(sel) ? " selected" : "") + ">" + esc(t) + "</option>"; };
     function setupHtml() {
         const c = cur.c, st = S(), dv = derived();
-        const rows = c ? c.ro.map(function (id, n) { return [id, CS.sideOf(c, n), 'data-mv="' + n + '"']; }) : items.map(function (it) { return [it.id, draft.side[it.id] !== undefined ? draft.side[it.id] : defSide(it), 'data-tok="' + esc(it.id) + '"']; });
+        const rows = c ? c.ro.map(function (id, n) { return [id, CS.sideOf(c, n), 'data-mv="' + n + '"']; }) : items.map(function (it) { return [it.id, sideFor(it), 'data-tok="' + esc(it.id) + '"']; });
         const sdName = function (i) { return c ? c.sd[i].n : draft.n[i]; };
         let h = '<div class="cmsetup"><h4>Sides</h4><div class="cmsides">' + [0, 1].map(function (i) {
             const ra = c ? c.sd[i].ra : draft.r[i] !== undefined ? draft.r[i] : dv[i].ra, ov = c ? c.sd[i].ov : draft.r[i] !== undefined, et = c ? c.sd[i].et : draft.et[i];
@@ -151,8 +215,9 @@ const CombatUI = (function () {
             '<button type="button" class="x ibtn" data-act="cog" title="Set-up: sides, dice, restrictions" aria-label="Set-up">' + ic("gear") + '</button><button type="button" class="btn ghost small" data-act="end">' + ic("flag") + 'End combat</button></div>';
         if (showSetup()) h += setupHtml();
         h += '<ol class="steps">' + L.map(function (x) { return '<li class="' + x.st + '">' + '<span class="lbl">' + (x.st === "done" ? "<s>" + esc(x.label) + "</s>" : esc(x.label)) + "</span>" + (x.res ? '<span class="res">' + esc(x.res) + "</span>" : "") + "</li>"; }).join("") + "</ol>";
+        h += attackHtml(c);
         h += actionHtml(c);
-        h += '<div class="cmfoot"><button type="button" class="btn ghost small" data-act="undo"' + (hist.length ? "" : " disabled") + ">" + ic("undo") + "Undo last step</button><span class=\"hint\" id=\"cm-msg\">" + esc(msg) + "</span></div>";
+        h += '<div class="cmfoot"><button type="button" class="btn ghost small" data-act="undo"' + (cur.undo.length ? "" : " disabled") + ">" + ic("undo") + "Undo last step</button><span class=\"hint\" id=\"cm-msg\">" + esc(msg) + "</span></div>";
         if (c.w === 2 && c.rd > 0) h += '<p class="hint">' + esc(CS.TIE_NOTE) + inf(CS.TIE_PG) + "</p>";
         return h + '<details class="cmlog" id="cm-log"' + (lOpen ? " open" : "") + "><summary>Log</summary>" + rollWinHtml(c) + "</details>";
     }
@@ -171,14 +236,14 @@ const CombatUI = (function () {
         const a = b.dataset.act, c = cur.c;
         if (a === "cog") { setupOpen = !showSetup(); render(); }
         else if (a === "start") {
-            const ids = items.map(function (i) { return i.id; }), side = items.map(function (i) { return draft.side[i.id] !== undefined ? draft.side[i.id] : defSide(i); }), dv = derived();
+            const ids = items.map(function (i) { return i.id; }), side = items.map(sideFor), dv = derived();
             if (side.every(function (s) { return s === 2; })) { msg = "Put at least one token in a side."; render(); return; }
             const nc = CS.create(ids, side, draft.n.map(function (n) { return n.trim() || "Side"; }), [0, 1].map(function (i) { return draft.r[i] !== undefined ? draft.r[i] : dv[i].ra; }));
             nc.op = draft.op; nc.rs = draft.rs; [0, 1].forEach(function (i) { nc.sd[i].et = draft.et[i]; if (draft.r[i] !== undefined) nc.sd[i].ov = 1; });
             const logs = {};
             if (!CS.isOn(nc, "cm.surprise") || surMode === "none") CS.noSurprise(nc, logs);
-            msg = ""; hist = []; setupOpen = false;
-            await save(nc, logs, []).catch(function (er) { say(er.message, "ERROR"); }); render();
+            msg = ""; setupOpen = false;
+            await save(nc, logs, [], []); await TK.OBR.scene.setMetadata((function () { const o = {}; o[CS.PRE] = undefined; return o; })()).catch(function (er) { say(er.message, "ERROR"); }); render();
         } else if (a === "primary") {
             if (!c) return;
             const nd = CS.needs(c), src = effSrc(c);
@@ -186,9 +251,13 @@ const CombatUI = (function () {
             if (nd.length) { if (src === 0) vals = nd.map(function () { return GMCombat.rnd(6); }); else { vals = typedVals(c); if (!vals) { msg = "Type the die result, 1 to 6, for each side."; render(); return; } } }
             runStep(vals, src, []);
         } else if (a === "sheetinstead") { const nd = CS.needs(c); wait = null; runStep(nd.map(function () { return GMCombat.rnd(6); }), 0, []); }
-        else if (a === "nosur") mutate(function (c, logs) { CS.noSurprise(c, logs); });
-        else if (a === "first") mutate(function (c, logs) { const snap = CS.takeSnap(c, logs), lb = "Who goes first"; CS.stepFirst(c, logs, Number(b.dataset.w)); hist.push({ snap: snap, label: lb }); });
-        else if (a === "undo") { if (hist.length) mutate(function (c, logs) { const h = hist.pop(); removedExtra = CS.undo(c, logs, h.snap, h.label); }); }
+        else if (a === "nosur") mutate(function (c, logs, sum, stack) { const before = CS.takeSnap(c, logs); CS.noSurprise(c, logs); CS.pushUndo(stack, before, logs, "No surprise"); });
+        else if (a === "first") mutate(function (c, logs, sum, stack) { const before = CS.takeSnap(c, logs); CS.stepFirst(c, logs, Number(b.dataset.w)); CS.pushUndo(stack, before, logs, "Who goes first"); });
+        else if (a === "undo") { if (cur.undo.length) mutate(function (c, logs, sum, stack) { const r = CS.undo(c, logs, stack); removedExtra = r ? r.removed : []; }); }
+        else if (a === "atkroll") { const q = pendAtk(); if (!q) return; if (c.rs === 1) { const v = parseInt((gmRoot.querySelector("#cm-atk-in") || {}).value, 10); if (!(v >= 1 && v <= 20)) { msg = "Type the die result, 1 to 20."; render(); return; } resolveAttack(v, 1, []); } else resolveAttack(GMCombat.rnd(20), 0, []); }
+        else if (a === "atksheet") { wait = null; resolveAttack(GMCombat.rnd(20), 0, []); }
+        else if (a === "atkov") { atk.ov = true; render(); }
+        else if (a === "atkno") dismissAttack();
         else if (a === "rangeauto") mutate(function (c) { const i = Number(b.dataset.i); delete c.sd[i].ov; CS.applyRanges(c, derived()); });
         else if (a === "end") endCombat();
     }
@@ -204,7 +273,8 @@ const CombatUI = (function () {
     function onChange(e) {
         const t = e.target, c = cur.c, i = Number(String(t.id).slice(-1));
         if (t.id === "cm-sm") { surMode = t.value; render(); return; }
-        if (t.dataset.tok) { draft.side[t.dataset.tok] = Number(t.value); render(); return; }
+        if (t.dataset.atk) { atk[t.dataset.atk] = t.dataset.atk === "wi" ? Number(t.value) : t.value; render(); return; }
+        if (t.dataset.tok) { const o = {}; o[CS.PRE] = Object.assign({}, pre()); o[CS.PRE][t.dataset.tok] = Number(t.value); TK.OBR.scene.setMetadata(o).catch(function (e) { say(e.message, "ERROR"); }); return; }
         if (!c) {
             if (t.id === "cm-n0" || t.id === "cm-n1") { draft.n[i] = t.value.slice(0, 24); render(); }
             else if (t.id === "cm-r0" || t.id === "cm-r1") { draft.r[i] = CS.clampRange(t.value); render(); }
@@ -235,7 +305,7 @@ const CombatUI = (function () {
     // called by the hub once the scene is ready: read, then follow changes
     async function boot() {
         const O = TK.OBR;
-        try { if (await O.scene.isReady()) { await loadItems(); ingest(await O.scene.getMetadata()); } } catch (e) { console.warn(e); }
+        try { if (await O.scene.isReady()) { await loadItems(); ingest(await O.scene.getMetadata()); if (TK.role === "GM") reqEvent(); } } catch (e) { console.warn(e); }
         O.scene.onMetadataChange(ingest); O.scene.items.onChange(loadItems);
         O.scene.onReadyChange(async function (r) { if (r) { await loadItems(); ingest(await O.scene.getMetadata()); } });
         if (TK.role === "GM") { O.party.onChange(function (ps) { players = ps.filter(function (p) { return p.role === "PLAYER"; }); trayEvent(); }); O.player.onChange(trayEvent); }

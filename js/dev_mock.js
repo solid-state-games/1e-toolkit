@@ -5,9 +5,9 @@
 const STORE = 'toolkit-dev-scene';
 const PLAYERS = [{ id: 'dev-gm', name: 'Dev GM', role: 'GM', color: '#a33' }, { id: 'dev-player', name: 'Dev Player', role: 'PLAYER', color: '#36a' }, { id: 'dev-player2', name: 'Other Player', role: 'PLAYER', color: '#693' }];
 const seed = () => ({ grant: false, meta: {}, pm: {}, items: [
-    { id: 't1', name: 'Aldric (your token)', layer: 'CHARACTER', type: 'IMAGE', createdUserId: 'dev-player', metadata: {} },
-    { id: 't2', name: 'Brenna (other player)', layer: 'CHARACTER', type: 'IMAGE', createdUserId: 'dev-player2', metadata: {} },
-    { id: 't3', name: 'Goblin NPC (GM token)', layer: 'CHARACTER', type: 'IMAGE', createdUserId: 'dev-gm', metadata: {} },
+    { id: 't1', name: 'Aldric (your token)', layer: 'CHARACTER', type: 'IMAGE', createdUserId: 'dev-player', position: { x: 100, y: 100 }, metadata: {} },
+    { id: 't2', name: 'Brenna (other player)', layer: 'CHARACTER', type: 'IMAGE', createdUserId: 'dev-player2', position: { x: 300, y: 100 }, metadata: {} },
+    { id: 't3', name: 'Goblin NPC (GM token)', layer: 'CHARACTER', type: 'IMAGE', createdUserId: 'dev-gm', position: { x: 500, y: 100 }, metadata: {} },
     { id: 't4', name: 'Map', layer: 'MAP', type: 'IMAGE', createdUserId: 'dev-gm', metadata: {} }] });
 const load = () => { try { return JSON.parse(localStorage.getItem(STORE)) || seed(); } catch (e) { return seed(); } };
 const save = s => localStorage.setItem(STORE, JSON.stringify(s));
@@ -16,7 +16,7 @@ const bytes = o => new Blob([JSON.stringify(o)]).size;
 export default function makeMock(role) {
     const me = role === 'gm' ? PLAYERS[0] : PLAYERS[1];
     const listeners = new Set();
-    const metaListeners = new Set(), partyL = new Set(), playerL = new Set(), pops = {};
+    const ctxMenus = {}, tools = {}, modes = {}, metaListeners = new Set(), partyL = new Set(), playerL = new Set(), pops = {};
     const fireMeta = () => { const m = clone(load().meta || {}); metaListeners.forEach(f => f(m)); };
     const others = () => PLAYERS.filter(p => p.id !== me.id).map(p => Object.assign(clone(p), { metadata: clone((load().pm || {})[p.id] || {}) }));
     const fire = () => { const items = load().items; listeners.forEach(f => f(items)); fireMeta(); partyL.forEach(f => f(others())); playerL.forEach(f => f(Object.assign(clone(me), { metadata: clone((load().pm || {})[me.id] || {}) }))); };
@@ -35,7 +35,7 @@ export default function makeMock(role) {
             id: me.id,
             getId: async () => me.id, getRole: async () => me.role, getName: async () => me.name, getColor: async () => me.color,
             hasPermission: async p => me.role === 'GM' || (p === 'CHARACTER_UPDATE' && !!load().grant),
-            getSelection: async () => [], getMetadata: async () => clone((load().pm || {})[me.id] || {}), setMetadata: async () => {}, onChange: cb => { playerL.add(cb); return () => playerL.delete(cb); }
+            getSelection: async () => [], getMetadata: async () => clone((load().pm || {})[me.id] || {}), setMetadata: async patch => { const st = load(); st.pm = st.pm || {}; st.pm[me.id] = Object.assign(st.pm[me.id] || {}, clone(patch)); save(st); fire(); }, onChange: cb => { playerL.add(cb); return () => playerL.delete(cb); }
         },
         party: { getPlayers: async () => others(), onChange: cb => { partyL.add(cb); return () => partyL.delete(cb); } },
         scene: {
@@ -51,6 +51,7 @@ export default function makeMock(role) {
             },
             onMetadataChange: cb => { metaListeners.add(cb); return () => metaListeners.delete(cb); },
             items: {
+                getItemBounds: async ids => { const its = load().items; return ids.map(id => { const it = its.filter(x => x.id === id)[0], p = (it && it.position) || { x: 0, y: 0 }; return { min: { x: p.x - 50, y: p.y - 50 }, max: { x: p.x + 50, y: p.y + 50 } }; }); },
                 getItems: async f => { const items = clone(load().items); if (Array.isArray(f)) return items.filter(i => f.indexOf(i.id) >= 0); return typeof f === 'function' ? items.filter(f) : items; },
                 updateItems: async (f, fn) => {
                     const st = load(), targets = st.items.filter(i => Array.isArray(f) ? (typeof f[0] === 'string' ? f.indexOf(i.id) >= 0 : f.some(x => x.id === i.id)) : f(i));
@@ -90,12 +91,18 @@ export default function makeMock(role) {
             close: async id => { if (pops[id]) { pops[id].remove(); delete pops[id]; } },
             getWidth: async () => 300, getHeight: async () => 100
         },
-        contextMenu: { create: async () => {}, remove: async () => {} },
+        contextMenu: { create: async m => { ctxMenus[m.id] = m; }, remove: async id => { delete ctxMenus[id]; } },
+        tool: { create: async t => { tools[t.id] = t; }, createMode: async m => { modes[m.id] = m; }, activateMode: async (t, m) => { window.__activeMode = m; }, activateTool: async () => {} },
         viewport: { getHeight: async () => window.__vh || 900, getWidth: async () => 1200 },
         action: { setHeight: async h => { window.__actionHeight = h; }, getHeight: async () => window.__actionHeight || 760, setWidth: async () => {}, open: async () => {}, close: async () => {} },
         room: { getPermissions: async () => (load().grant ? ['CHARACTER_UPDATE'] : []), onPermissionsChange: () => () => {} },
         // dev only helpers used by the dev bar
         _dev: { toggleGrant() { const s = load(); s.grant = !s.grant; save(s); fire(); return s.grant; }, grant: () => !!load().grant,
-            reset() { save(seed()); fire(); }, setTray(pid, values) { const s = load(); s.pm = s.pm || {}; s.pm[pid] = { 'rodeo.owlbear.dice/rollValues': values, 'rodeo.owlbear.dice/roll': { n: Math.random() } }; save(s); fire(); }, addToken(name) { const s = load(); s.items.push({ id: 't' + Date.now(), name, layer: 'CHARACTER', type: 'IMAGE', createdUserId: me.id, metadata: {} }); save(s); fire(); } }
+            reset() { save(seed()); fire(); },
+            // dev stand-ins for right-click and the tool: list the context items for the chosen tokens, run one, and drag with the Attack mode
+            ctxLabels: () => Object.keys(ctxMenus).map(id => ({ id, label: ctxMenus[id].icons[0].label })),
+            ctxClick: async (id, ids) => { const items = load().items.filter(i => ids.indexOf(i.id) >= 0); await ctxMenus[id].onClick({ items }); },
+            drag: async (fromId, toId) => { const m = modes[Object.keys(modes)[0]], pos = id => load().items.filter(i => i.id === id)[0].position; await m.onToolDragStart({}, { pointerPosition: pos(fromId) }); await m.onToolDragEnd({}, { pointerPosition: pos(toId) }); },
+            click: async id => { const m = modes[Object.keys(modes)[0]]; await m.onToolClick({}, { pointerPosition: load().items.filter(i => i.id === id)[0].position }); }, setTray(pid, values) { const s = load(); s.pm = s.pm || {}; s.pm[pid] = { 'rodeo.owlbear.dice/rollValues': values, 'rodeo.owlbear.dice/roll': { n: Math.random() } }; save(s); fire(); }, addToken(name) { const s = load(); s.items.push({ id: 't' + Date.now(), name, layer: 'CHARACTER', type: 'IMAGE', createdUserId: me.id, metadata: {} }); save(s); fire(); } }
     };
 }

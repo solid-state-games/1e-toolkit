@@ -262,3 +262,7 @@ label.chk{display:flex;align-items:flex-start;gap:var(--s2)}label.chk input{marg
 
 /* calculators and set-up rows: every input and select in a control row is the same height, so labels and fields sit on one line */
 .ctl input:not([type=checkbox]),.ctl select{height:28px}
+
+/* attack card inside the combat card: same hairline box as the roll window */
+.cmatk{border:var(--hair) solid var(--line);padding:var(--s2) var(--s3);margin:0 0 var(--s3)}.cmatk h4{display:flex;align-items:center;gap:var(--s1);font-size:12px;margin:0 0 var(--s2);padding-bottom:var(--s1);border-bottom:var(--hair) solid var(--line)}
+.cmatk p{margin:var(--s1) 0}.cmprob{margin:var(--s1) 0 var(--s2);padding-left:1.2em;font-size:13px}.cmrow{display:flex;gap:var(--s2);align-items:center;flex-wrap:wrap}

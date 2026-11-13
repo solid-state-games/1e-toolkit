@@ -3,7 +3,7 @@
    initiative, the per-round log and its fold. Uses surpriseSegments, dexSegments, dexReaction, initWinner from lib/combat_rules.js
    (loaded first). Tested by test/toolkit.test.js. The GM tab (js/combat_ui.js) calls this and writes the result to scene metadata. */
 const CombatState = (function () {
-    const NS = "io.github.solid-state-games.1e-toolkit", KEY = NS + "/combat", LOGP = NS + "/log/";
+    const NS = "io.github.solid-state-games.1e-toolkit", KEY = NS + "/combat", LOGP = NS + "/log/", UNDO = NS + "/undo", PRE = NS + "/pre", UNDO_MAX = 20;
     const MAX_BYTES = 14000, KEEP = 6, MAX_SUM = 100;       // spec 8.3: 14 kB ceiling, last 6 rounds in detail, at most 100 summary lines
     const SRC = ["sheet", "typed", "tray", "earlier"];                   // roll source codes stored in a log entry's flags
     const SRC_LABEL = ["rolled in the sheet", "physical die typed in", "Owlbear Dice tray", "rolled earlier"];
@@ -27,16 +27,17 @@ const CombatState = (function () {
     // ids: token ids (roster, stored once); side: 0 or 1 per id; names: two side names; ranges: surprise range per side (surprised on 1 to range).
     function create(ids, side, names, ranges) {
         const c = { v: 1, on: 1, rd: 0, ph: 1, sg: 0, op: 0, rs: 0, w: -1, ro: ids.slice(), nf: [],
-            sd: [0, 1].map(function (i) { return { n: String(names[i] || (i ? "Foes" : "Party")).slice(0, 24), ra: clampRange(ranges ? ranges[i] : 2), sr: 0, sl: 0, in: 0, m: [] }; }) };
-        ids.forEach(function (id, n) { if (side[n] === 2) c.nf.push(n); else c.sd[side[n] ? 1 : 0].m.push(n); });   // side 2 = Not fighting: in the roster, in no side
+            sd: Array.apply(null, Array(Math.max(2, names.length))).map(function (x, i) { return { n: String(names[i] || (i ? "Foes" : "Party")).slice(0, 24), ra: clampRange(ranges ? ranges[i] : 2), sr: 0, sl: 0, in: 0, m: [] }; }) };
+        c.ak = {};   // last attack request handled per player
+        ids.forEach(function (id, n) { if (side[n] >= c.sd.length) c.nf.push(n); else c.sd[side[n] || 0].m.push(n); });   // a side number past the last side = Not fighting: in the roster, in no side
         return c;
     }
     function clampRange(r) { r = Math.round(Number(r)); return isNaN(r) ? 2 : Math.max(0, Math.min(6, r)); }
     // 0 and 1 are the sides, 2 is Not fighting (bystanders, captives, mounts, hirelings out of it): never rolled for, never in a count
-    function sideOf(c, n) { return c.sd[0].m.indexOf(n) >= 0 ? 0 : c.sd[1].m.indexOf(n) >= 0 ? 1 : 2; }
+    function sideOf(c, n) { for (let i = 0; i < c.sd.length; i++) if (c.sd[i].m.indexOf(n) >= 0) return i; return c.sd.length; }
     function moveToken(c, n, to) {
         c.sd.forEach(function (s) { s.m = s.m.filter(function (x) { return x !== n; }); }); c.nf = (c.nf || []).filter(function (x) { return x !== n; });
-        (to === 2 ? c.nf : c.sd[to ? 1 : 0].m).push(n); [c.sd[0].m, c.sd[1].m, c.nf].forEach(function (a) { a.sort(function (x, y) { return x - y; }); });
+        (to >= c.sd.length ? c.nf : c.sd[to].m).push(n); c.sd.map(function (s) { return s.m; }).concat([c.nf]).forEach(function (a) { a.sort(function (x, y) { return x - y; }); });
     }
     const fighters = function (c) { return c.sd[0].m.concat(c.sd[1].m); };
     const changed = function (c) { return TOGGLES.filter(function (t) { return isOn(c, t.k) !== !!t.on; }).length; };
@@ -124,13 +125,15 @@ const CombatState = (function () {
     };
     // [round, initiative winner (0, 1, 2 tie, -1 none), kills side 0, kills side 1, hp lost side 0, hp lost side 1]: the last four are filled once attacks exist
     const summary = function (rd, arr) { return [Number(rd), winnerOf(arr), 0, 0, 0, 0]; };
-    const bytesOf = function (c, logs, sum) { const o = {}; o[KEY] = c; Object.keys(logs).forEach(function (k) { o[LOGP + k] = logs[k]; }); if (sum.length) o[LOGP + "s"] = sum; return JSON.stringify(o).length; };
+    const bytesOf = function (c, logs, sum, stack) { const o = {}; o[KEY] = c; Object.keys(logs).forEach(function (k) { o[LOGP + k] = logs[k]; }); if (sum.length) o[LOGP + "s"] = sum; if (stack && stack.length) o[UNDO] = stack; return JSON.stringify(o).length; };
     // Fold rounds older than the last 6 into summaries; fold more early if the scene would pass the ceiling. Returns the round keys removed.
-    function fold(c, logs, sum, max) {
+    function fold(c, logs, sum, max, stack) {
         const removed = [], keys = function () { return Object.keys(logs).map(Number).sort(function (a, b) { return a - b; }); };
         const one = function (k) { sum.push(summary(k, logs[k])); delete logs[k]; removed.push(k); };
         keys().filter(function (k) { return k <= c.rd - KEEP; }).forEach(one);
-        for (let old = keys().filter(function (k) { return k < c.rd; })[0]; old !== undefined && bytesOf(c, logs, sum) > (max || MAX_BYTES); old = keys().filter(function (k) { return k < c.rd; })[0]) one(old);
+        // over the ceiling: the oldest undo steps go first, then older rounds fold; the current round's log is never touched
+        while (stack && stack.length && bytesOf(c, logs, sum, stack) > (max || MAX_BYTES)) stack.shift();
+        for (let old = keys().filter(function (k) { return k < c.rd; })[0]; old !== undefined && bytesOf(c, logs, sum, stack) > (max || MAX_BYTES); old = keys().filter(function (k) { return k < c.rd; })[0]) one(old);
         while (sum.length > MAX_SUM) sum.shift();
         return removed;
     }
@@ -205,15 +208,25 @@ const CombatState = (function () {
         if (c.ph === 2) return c.w === 2 || !isOn(c, "cm.phase-order") ? [0, 1] : c.w >= 0 ? [c.w] : [];
         return c.ph === 3 && c.w >= 0 ? [1 - c.w] : [];
     }
-    // undo: remember the step fields (not names, roster, toggles) and the round's log before a step; put them back and log kind 9
-    function takeSnap(c, logs) { return { rd: c.rd, ph: c.ph, sg: c.sg, w: c.w, sd: c.sd.map(function (s) { return { sr: s.sr, sl: s.sl, in: s.in }; }), log: logs[c.rd] ? JSON.parse(JSON.stringify(logs[c.rd])) : null }; }
-    function undo(c, logs, snap, label) {
-        const gone = c.rd, removed = [];
-        if (gone !== snap.rd) { delete logs[gone]; removed.push(gone); }
-        c.rd = snap.rd; c.ph = snap.ph; c.sg = snap.sg; c.w = snap.w; snap.sd.forEach(function (s, i) { c.sd[i].sr = s.sr; c.sd[i].sl = s.sl; c.sd[i].in = s.in; });
-        if (snap.log) logs[snap.rd] = JSON.parse(JSON.stringify(snap.log)); else delete logs[snap.rd];
-        logAdd(logs, c.rd, entry(0, 9, -1, 0, 0, 0, "GM undid: " + label));
-        return removed;
+    // Undo that survives a reload: a stack of the last 20 steps in scene metadata (key `undo`). Each entry is the step fields before the step,
+    // how many log lines the step added to that round, and `x` = whatever a later step (damage) needs put back. Take a snapshot BEFORE a step,
+    // call pushUndo AFTER it. Every step that can be walked back goes through pushUndo.
+    function takeSnap(c, logs) { return { rd: c.rd, ph: c.ph, sg: c.sg, w: c.w, s: c.sd.map(function (x) { return [x.sr, x.sl, x.in]; }), n: (logs[c.rd] || []).length }; }
+    function pushUndo(stack, before, logs, label, extra) {
+        const e = { l: label, rd: before.rd, ph: before.ph, sg: before.sg, w: before.w, s: before.s, n: before.n, k: (logs[before.rd] || []).length - before.n };
+        if (extra !== undefined) e.x = extra;
+        stack.push(e); while (stack.length > UNDO_MAX) stack.shift();
+        return stack;
+    }
+    // Walk back one step: restore its fields, drop the log lines it added and any later rounds, log kind 9. Returns {label, removed, x} or null.
+    function undo(c, logs, stack) {
+        const e = stack.pop(); if (!e) return null;
+        const removed = [];
+        Object.keys(logs).map(Number).filter(function (r) { return r > e.rd; }).forEach(function (r) { delete logs[r]; removed.push(r); });
+        if (logs[e.rd]) logs[e.rd].splice(e.n, e.k);
+        c.rd = e.rd; c.ph = e.ph; c.sg = e.sg; c.w = e.w; e.s.forEach(function (x, i) { c.sd[i].sr = x[0]; c.sd[i].sl = x[1]; c.sd[i].in = x[2]; });
+        logAdd(logs, c.rd, entry(0, 9, -1, 0, 0, 0, "GM undid: " + e.l));
+        return { label: e.l, removed: removed, x: e.x };
     }
     // the log a person sees: only the last roll a side made for each kind (a replaced roll is hidden)
     function visible(list) {
@@ -224,19 +237,19 @@ const CombatState = (function () {
     // Dice tray: take the first NEW single d6 from anyone. A roll counts as new when anything the Dice extension keeps in that
     // player's metadata differs from what was captured when the step asked, so a stale last roll is never reused.
     const TRAY = "rodeo.owlbear.dice/", sigOf = function (md) { md = md || {}; return JSON.stringify(Object.keys(md).filter(function (k) { return k.indexOf(TRAY) === 0; }).sort().map(function (k) { return [k, md[k]]; })); };
-    function dieOf(md) {
+    function dieOf(md, max) {
         let v = (md || {})[TRAY + "rollValues"];
         if (v && typeof v === "object" && !Array.isArray(v)) v = Object.keys(v).map(function (k) { return v[k]; });
         if (!Array.isArray(v) || v.length !== 1) return null;
         v = v[0] && typeof v[0] === "object" ? v[0].value : v[0];
-        return v >= 1 && v <= 6 && v === Math.floor(v) ? v : null;
+        return v >= 1 && v <= (max || 6) && v === Math.floor(v) ? v : null;
     }
     function traySnap(players) { const o = {}; players.forEach(function (p) { o[p.id] = sigOf(p.metadata); }); return o; }
     // wants[j] = ids allowed to roll for need j (null once filled). Takes the first new d6 from an allowed roller; rolls from anyone else are ignored.
-    function trayPick(base, players, wants) {
+    function trayPick(base, players, wants, max) {
         for (let i = 0; i < players.length; i++) {
             const p = players[i], sg = sigOf(p.metadata); if (sg === base[p.id]) continue;
-            base[p.id] = sg; const v = dieOf(p.metadata); if (!v) continue;
+            base[p.id] = sg; const v = dieOf(p.metadata, max); if (!v) continue;
             for (let j = 0; j < wants.length; j++) if (wants[j] && wants[j].indexOf(p.id) >= 0) return { j: j, id: p.id, name: p.name, value: v };
         }
         return null;
@@ -281,21 +294,33 @@ const CombatState = (function () {
         });
     }
     function applyRanges(c, derived) { derived.forEach(function (d, i) { if (!c.sd[i].ov) c.sd[i].ra = d.ra; }); }
+    // Right-click side assignment (GM): put tokens on side `to` (0..n-1) or Not fighting (n or more). In a combat it edits the roster, and adds
+    // tokens not yet in it; before a combat it records the choice in `pre`, which the set-up panel and Start combat read. Returns the metadata patch.
+    function sidesPatch(meta, ids, to) {
+        const r = read(meta), o = {};
+        if (r.c) {
+            const c = JSON.parse(JSON.stringify(r.c)); c.nf = c.nf || [];
+            ids.forEach(function (id) { let n = c.ro.indexOf(id); if (n < 0) { c.ro.push(id); n = c.ro.length - 1; c.nf.push(n); } moveToken(c, n, to); });
+            o[KEY] = c;
+        } else { const pre = Object.assign({}, (meta || {})[PRE] || {}); ids.forEach(function (id) { pre[id] = to; }); o[PRE] = pre; }
+        return o;
+    }
     // read everything back out of scene metadata
     function read(meta) {
         meta = meta || {}; const logs = {}; let sum = [];
         Object.keys(meta).forEach(function (k) { if (k.indexOf(LOGP) === 0) { const r = k.slice(LOGP.length); if (r === "s") sum = meta[k]; else logs[r] = meta[k]; } });
-        return { c: meta[KEY] && meta[KEY].on ? meta[KEY] : null, logs: logs, sum: sum };
+        return { c: meta[KEY] && meta[KEY].on ? meta[KEY] : null, logs: logs, sum: sum, undo: Array.isArray(meta[UNDO]) ? meta[UNDO] : [] };
     }
     // the metadata patch to write: combat, the kept rounds' logs, the summary if folded; removed keys are set undefined (clears them)
-    function patch(c, logs, sum, removed) {
+    function patch(c, logs, sum, removed, stack) {
         const o = {}; o[KEY] = c;
+        if (stack !== undefined) o[UNDO] = stack.length ? stack : undefined;
         Object.keys(logs).forEach(function (k) { o[LOGP + k] = logs[k]; });   // all kept rounds: a step can log into round 0 as round 1 starts
         if (removed && removed.length) { o[LOGP + "s"] = sum; removed.forEach(function (k) { o[LOGP + k] = undefined; }); }
         return o;
     }
     // end combat: every key we own goes
-    function clearPatch(meta) { const o = {}; Object.keys(meta || {}).forEach(function (k) { if (k === KEY || k.indexOf(LOGP) === 0) o[k] = undefined; }); o[KEY] = undefined; return o; }
+    function clearPatch(meta) { const o = {}; Object.keys(meta || {}).forEach(function (k) { if (k === KEY || k === UNDO || k === PRE || k.indexOf(LOGP) === 0) o[k] = undefined; }); o[KEY] = undefined; return o; }
     function exportText(c, logs, sum, nameOf) {
         const L = ["1e Toolkit combat log", "Sides: " + c.sd.map(function (s) { return s.n + " (" + s.m.map(nameOf).join(", ") + ")"; }).join(" | "), "Ended in round " + c.rd, ""];
         if (sum.length) { L.push("Earlier rounds (summary: round, initiative winner, kills, hit points lost):"); sum.forEach(function (s) { L.push("  round " + s[0] + ": " + (s[1] === 2 ? "tie" : s[1] < 0 ? "no initiative" : c.sd[s[1]].n + " won initiative")); }); L.push(""); }
@@ -305,7 +330,7 @@ const CombatState = (function () {
         });
         return L.join("\n") + "\n";
     }
-    return { NS: NS, KEY: KEY, LOGP: LOGP, MAX_BYTES: MAX_BYTES, KEEP: KEEP, SRC: SRC, SRC_LABEL: SRC_LABEL, PHASE: PHASE, TOGGLES: TOGGLES, TIE_NOTE: TIE_NOTE, TIE_PG: TIE_PG, fighters: fighters, changed: changed, acts: acts, stepKind: stepKind, needs: needs, primary: primary, stepList: stepList, step: step, stepFirst: stepFirst, applyEarlierSurprise: applyEarlierSurprise, noSurprise: noSurprise, actingSides: actingSides, takeSnap: takeSnap, undo: undo, visible: visible, sigOf: sigOf, dieOf: dieOf, traySnap: traySnap, trayPick: trayPick, rollerFor: rollerFor, monsterOf: monsterOf, sideFacts: sideFacts, deriveRanges: deriveRanges, applyRanges: applyRanges,
+    return { NS: NS, KEY: KEY, LOGP: LOGP, MAX_BYTES: MAX_BYTES, KEEP: KEEP, SRC: SRC, SRC_LABEL: SRC_LABEL, PHASE: PHASE, TOGGLES: TOGGLES, TIE_NOTE: TIE_NOTE, TIE_PG: TIE_PG, fighters: fighters, changed: changed, acts: acts, stepKind: stepKind, needs: needs, primary: primary, stepList: stepList, step: step, stepFirst: stepFirst, applyEarlierSurprise: applyEarlierSurprise, noSurprise: noSurprise, actingSides: actingSides, takeSnap: takeSnap, undo: undo, visible: visible, sigOf: sigOf, dieOf: dieOf, traySnap: traySnap, pushUndo: pushUndo, sidesPatch: sidesPatch, UNDO: UNDO, PRE: PRE, trayPick: trayPick, rollerFor: rollerFor, monsterOf: monsterOf, sideFacts: sideFacts, deriveRanges: deriveRanges, applyRanges: applyRanges,
         isOn: isOn, setToggle: setToggle, create: create, sideOf: sideOf, moveToken: moveToken, clampRange: clampRange, surpriseReady: surpriseReady, maxSl: maxSl, resolveSurprise: resolveSurprise,
         setRange: setRange, rollSurprise: rollSurprise, indivSegs: indivSegs, barred: barred, skipSurprise: skipSurprise, rollInit: rollInit, setFirst: setFirst, startRound: startRound,
         advance: advance, banner: banner, entry: entry, logAdd: logAdd, entryText: entryText, winnerOf: winnerOf, bytesOf: bytesOf, fold: fold, read: read, patch: patch,
