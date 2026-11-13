@@ -102,8 +102,8 @@ const CombatState = (function () {
         if (c.ph === 1) return { a: rd, b: "Rolling initiative" };
         if (c.w === 2) return { a: rd, b: c.ph === 4 ? "End of round" : "Both sides act together (tie)" };
         if (!isOn(c, "cm.phase-order")) return { a: rd, b: c.ph === 4 ? "End of round" : n(c.w) + " has initiative. Sides act in any order" };
-        if (c.ph === 2) return { a: rd, b: n(c.w) + " acts" };
-        if (c.ph === 3) return { a: rd, b: n(1 - c.w) + " acts" };
+        if (c.ph === 2) return { a: rd, b: acts(n(c.w)) };
+        if (c.ph === 3) return { a: rd, b: acts(n(1 - c.w)) };
         return { a: rd, b: "End of round" };
     }
 
