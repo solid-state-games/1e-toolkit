@@ -572,9 +572,9 @@ if (fs.existsSync(path.join(root, '..', '..', '..', 'ADD-BOOKS-PDF', 'TEXT'))) {
     let p = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.skipSurprise(p);
     const trail = []; CS.rollInit(p, 0, 5); CS.rollInit(p, 1, 2);
     for (let i = 0; i < 6; i++) { trail.push(p.rd + ':' + p.ph + ':' + CS.banner(p).b); CS.advance(p); }
-    check('(j) phase order: initiative, winner acts, other side acts, end of round, then round 2 starts with fresh initiative', trail.slice(0, 5).join(' | ') === '1:1:Rolling initiative | 1:2:Party acts | 1:3:Goblins acts | 1:4:End of round | 2:1:Rolling initiative' && p.rd === 2 && p.sd[0].in === 0 && p.w === -1, trail.join(' | '));
+    check('(j) phase order: initiative, winner acts, other side acts, end of round, then round 2 starts with fresh initiative', trail.slice(0, 5).join(' | ') === '1:1:Rolling initiative | 1:2:Party acts | 1:3:Goblins act | 1:4:End of round | 2:1:Rolling initiative' && p.rd === 2 && p.sd[0].in === 0 && p.w === -1, trail.join(' | '));
     p = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.skipSurprise(p);
-    check('(j) cannot leave initiative until both sides have rolled; the lower roller goes second', !CS.advance(p).ok && (CS.rollInit(p, 0, 2), !CS.advance(p).ok) && CS.rollInit(p, 1, 6) === 1 && CS.advance(p).ok && CS.banner(p).b === 'Goblins acts' && (CS.advance(p), CS.banner(p).b === 'Party acts'));
+    check('(j) cannot leave initiative until both sides have rolled; the lower roller goes second', !CS.advance(p).ok && (CS.rollInit(p, 0, 2), !CS.advance(p).ok) && CS.rollInit(p, 1, 6) === 1 && CS.advance(p).ok && CS.banner(p).b === 'Goblins act' && (CS.advance(p), CS.banner(p).b === 'Party acts'));
     p = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.skipSurprise(p); CS.rollInit(p, 0, 4); CS.rollInit(p, 1, 4); CS.advance(p);
     check('(j) tied initiative is simultaneous: one "both sides act" phase, then end of round; the A23 tie note is there', p.w === 2 && /together \(tie\)/.test(CS.banner(p).b) && CS.advance(p).ok && p.ph === 4 && /longer weapon/.test(CS.TIE_NOTE) && /lower speed factor/.test(CS.TIE_NOTE));
     p = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.setToggle(p, 'cm.declare', true); CS.skipSurprise(p);
