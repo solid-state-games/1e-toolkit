@@ -19,6 +19,7 @@ const CombatUI = (function () {
     const defSide = function (it) { return sheetOf(it) || ownerOf(it) ? 0 : 1; };
     const inf = function (t) { return t ? ' <span class="inf" title="' + esc(t) + '" aria-label="' + esc(t) + '">i</span>' : ""; };
     const S = function () { return cur.c || draft; };
+    const ic = function (n) { return '<i class="ic ic-' + n + '" aria-hidden="true"></i>'; };
 
     /* ----- who rolls, what the ranges are ----- */
     const owners = function (c) { return c.ro.map(function (id) { const it = byId(id); return it ? ownerOf(it) : ""; }); };
@@ -109,7 +110,7 @@ const CombatUI = (function () {
                 return n !== undefined ? nameOf(c.ro[n]) : p ? p.name : "a player";
             });
             const who = names[0] === null ? "the GM's d6" : names.join(" or ") + " to roll a d6 in the Dice tray";
-            return '<p class="cmwait">' + (w.nd.length > 1 ? esc(c.sd[i].n) + ": " : "") + "Waiting for " + esc(who) + "</p>";
+            return '<p class="cmwait">' + ic("wait") + "<span>" + (w.nd.length > 1 ? esc(c.sd[i].n) + ": " : "") + "Waiting for " + esc(who) + "</span></p>";
         }).join("");
     }
 
@@ -123,7 +124,7 @@ const CombatUI = (function () {
             const ra = c ? c.sd[i].ra : draft.r[i] !== undefined ? draft.r[i] : dv[i].ra, ov = c ? c.sd[i].ov : draft.r[i] !== undefined, et = c ? c.sd[i].et : draft.et[i];
             return '<div class="cmside2"><input id="cm-n' + i + '" value="' + esc(sdName(i)) + '" maxlength="24" aria-label="Side name"><label>Surprised on 1 to <input type="number" id="cm-r' + i + '" min="0" max="6" value="' + ra + '" class="cmnum"></label>' +
                 (ov ? ' <button type="button" class="btn ghost small" data-act="rangeauto" data-i="' + i + '">Auto</button>' : "") +
-                '<p class="hint">' + (ov ? "Set by the GM." : esc(dv[i].txt) + inf(dv[i].pg)) + '</p><label class="chk"><input type="checkbox" data-et="' + i + '"' + (et ? " checked" : "") + "> Elves/halflings alone or ahead, no metal armour" + inf("PHB p.16, p.17: surprise on 1-4 only then; otherwise 1-2") + "</label></div>";
+                '<p class="hint">' + (ov ? "Set by the GM." : esc(dv[i].txt) + inf(dv[i].pg)) + '</p><label class="chk"><input type="checkbox" data-et="' + i + '"' + (et ? " checked" : "") + "> <span>Elves/halflings alone or ahead, no metal armour" + inf("PHB p.16, p.17: surprise on 1-4 only then; otherwise 1-2") + "</span></label></div>";
         }).join("") + "</div>";
         h += '<table class="grid cmtok"><tr><th>Token</th><th>Group</th></tr>' + (rows.length ? rows.map(function (r) { return "<tr><td>" + esc(nameOf(r[0])) + '</td><td><select ' + r[2] + ">" + opt(0, sdName(0), r[1]) + opt(1, sdName(1), r[1]) + opt(2, "Not fighting", r[1]) + "</select></td></tr>"; }).join("") : '<tr><td colspan="2" class="muted">No character tokens on this scene yet.</td></tr>') + "</table>";
         h += '<p class="hint">Not fighting: bystanders, captives, mounts left behind, hirelings out of it. They are left out of every roll and count.</p>';
@@ -137,28 +138,28 @@ const CombatUI = (function () {
     function actionHtml(c) {
         const k = CS.stepKind(c), nd = CS.needs(c), src = effSrc(c);
         let h = "";
-        if (k === "sur" && c.rd === 0 && surMode === "none") return '<div class="cmact"><button type="button" class="btn" data-act="nosur">No surprise: go to round 1</button></div>';
+        if (k === "sur" && c.rd === 0 && surMode === "none") return '<div class="cmact"><button type="button" class="btn prim" data-act="nosur">No surprise: go to round 1</button></div>';
         if (k === "init" && !CS.isOn(c, "cm.initiative")) return '<div class="cmact">First: <button type="button" class="btn small" data-act="first" data-w="0">' + esc(c.sd[0].n) + '</button> <button type="button" class="btn small" data-act="first" data-w="1">' + esc(c.sd[1].n) + '</button> <button type="button" class="btn small ghost" data-act="first" data-w="2">Together</button></div>';
-        if (nd.length && src === 2) return '<div class="cmact">' + waitHtml(c) + '<button type="button" class="btn ghost small" data-act="sheetinstead">Roll in the sheet instead</button></div>';
+        if (nd.length && src === 2) return '<div class="cmact">' + waitHtml(c) + '<button type="button" class="btn ghost small" data-act="sheetinstead">' + ic("dice") + 'Roll in the sheet instead</button></div>';
         if (nd.length && (src === 1 || src === 3)) h += '<div class="cmtyped">' + nd.map(function (i) { return "<label>" + esc(c.sd[i].n) + ' d6 <input type="number" min="1" max="6" id="cm-in-' + i + '" class="cmnum"></label>'; }).join(" ") + "</div>";
         const label = src === 3 && k === "sur" ? "Apply the surprise dice" : CS.primary(c);
-        return '<div class="cmact"><button type="button" class="btn" data-act="primary">' + esc(label) + "</button>" + h + "</div>";
+        return '<div class="cmact"><button type="button" class="btn prim" data-act="primary">' + (/^(Roll|Apply)/.test(label) ? ic("dice") : "") + esc(label) + "</button>" + h + "</div>";
     }
     function runHtml() {
         const c = cur.c, L = CS.stepList(c);
         let h = '<div class="cmhead"><h3>Combat</h3><b class="cmrd">' + (c.rd === 0 ? "Surprise" : CS.isOn(c, "cm.rounds") ? "Round " + c.rd : "In progress") + '</b><span class="sp"></span>' +
-            '<button type="button" class="x" data-act="cog" title="Set-up: sides, dice, restrictions" aria-label="Set-up">&#9881;</button><button type="button" class="btn ghost small" data-act="end">End combat</button></div>';
+            '<button type="button" class="x ibtn" data-act="cog" title="Set-up: sides, dice, restrictions" aria-label="Set-up">' + ic("gear") + '</button><button type="button" class="btn ghost small" data-act="end">' + ic("flag") + 'End combat</button></div>';
         if (showSetup()) h += setupHtml();
-        h += '<ol class="steps">' + L.map(function (x) { return '<li class="' + x.st + '">' + (x.st === "done" ? "<s>" + esc(x.label) + "</s>" : esc(x.label)) + (x.res ? ' <span class="res">' + esc(x.res) + "</span>" : "") + "</li>"; }).join("") + "</ol>";
+        h += '<ol class="steps">' + L.map(function (x) { return '<li class="' + x.st + '">' + '<span class="lbl">' + (x.st === "done" ? "<s>" + esc(x.label) + "</s>" : esc(x.label)) + "</span>" + (x.res ? '<span class="res">' + esc(x.res) + "</span>" : "") + "</li>"; }).join("") + "</ol>";
         h += actionHtml(c);
-        h += '<div class="cmfoot"><button type="button" class="btn ghost small" data-act="undo"' + (hist.length ? "" : " disabled") + ">Undo last step</button><span class=\"hint\" id=\"cm-msg\">" + esc(msg) + "</span></div>";
+        h += '<div class="cmfoot"><button type="button" class="btn ghost small" data-act="undo"' + (hist.length ? "" : " disabled") + ">" + ic("undo") + "Undo last step</button><span class=\"hint\" id=\"cm-msg\">" + esc(msg) + "</span></div>";
         if (c.w === 2 && c.rd > 0) h += '<p class="hint">' + esc(CS.TIE_NOTE) + inf(CS.TIE_PG) + "</p>";
         return h + '<details class="cmlog" id="cm-log"' + (lOpen ? " open" : "") + "><summary>Log</summary>" + rollWinHtml(c) + "</details>";
     }
     const showSetup = function () { return setupOpen === null ? !cur.c : setupOpen; };
     function gmRender() {
         const keep = document.activeElement && gmRoot.contains(document.activeElement) && document.activeElement.id;
-        gmRoot.innerHTML = '<div class="cmcard">' + (cur.c ? runHtml() : '<div class="cmhead"><h3>Combat</h3><span class="sp"></span><button type="button" class="x" data-act="cog" title="Set-up" aria-label="Set-up">&#9881;</button></div>' + (showSetup() ? setupHtml() : '<p class="muted">No combat running. Open set-up (the cog) to start one.</p>')) + "</div>";
+        gmRoot.innerHTML = '<div class="cmcard">' + (cur.c ? runHtml() : '<div class="cmhead"><h3>Combat</h3><span class="sp"></span><button type="button" class="x ibtn" data-act="cog" title="Set-up" aria-label="Set-up">' + ic("gear") + '</button></div>' + (showSetup() ? setupHtml() : '<p class="muted">No combat running. Open set-up (the cog) to start one.</p>')) + "</div>";
         if (keep) { const e = gmRoot.querySelector("#" + keep); if (e) e.focus(); }
     }
     function typedVals(c) {

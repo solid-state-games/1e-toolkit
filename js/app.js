@@ -62,7 +62,7 @@ const Hub = (function () {
     function shell() {
         const tabs = [["sheets", "Characters"]].concat(TK.role === "GM" ? GM_TABS : [["cbt", "Combat"]]).concat([["guide", "Guide"]]);
         let h = '<header class="hubhead"><h1>1e Character Sheet</h1><span><span class="rolebadge">' + (TK.role === "GM" ? "GM" : "Player") + '</span>' + tkGear("hub") + '</span></header>';
-        h += '<nav class="tabs" role="tablist">' + tabs.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '">' + t[1] + "</button>"; }).join("") + "</nav>";
+        h += '<nav class="tabs" role="tablist">' + tabs.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '">' + (t[0] === "com" || t[0] === "cbt" ? '<i class="ic ic-sword" aria-hidden="true"></i>' : "") + t[1] + "</button>"; }).join("") + "</nav>";
         h += '<section id="sheets" class="pane"></section>';
         if (TK.role === "GM") h += '<section id="enc" class="pane"></section><section id="tre" class="pane"></section><section id="com" class="pane"></section>'; else h += '<section id="cbt" class="pane"></section>';
         h += '<section id="guide" class="pane"><p>The setup guide explains installing the extension, adding it to a room, linking a token to a sheet and moving a character between rooms.</p><p><a class="btn" href="guide.html" target="_blank" rel="noopener">Open the setup guide</a></p></section>';

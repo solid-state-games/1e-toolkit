@@ -207,25 +207,58 @@ table.acbuild tr.tot th{background:var(--inv-bg);color:var(--inv-fg);font-size:1
 .acskip{margin:.3em 0;padding-left:1.2em;font-size:12.5px;color:var(--muted)}.acskip li{margin:.1em 0}.acskip b{color:var(--fg);font-style:italic}
 .mkbar label.chk{border:1px solid var(--line);padding:.15em .5em;cursor:pointer}.mkbar label.chk input{width:1.1em;height:1.1em;accent-color:var(--fg)}
 
-/* ---------- combat mode: banner, roll window, GM screen ---------- */
-.cmban{border:2px solid var(--line);padding:.25em .7em;display:flex;flex-direction:column;background:var(--bg)}
+/* ---------- one system for strokes and spacing (combat screens, and anything new) ----------
+   --hair: every box, table and divider. --rule: only a card's title underline (as on the 1e record sheets). No dashed or dotted lines unless they mean something.
+   Spacing scale 4/8/12/16 follows the Spacing setting (compact and comfortable shift it). */
+:root{--hair:1px;--rule:2px;--s1:4px;--s2:8px;--s3:12px;--s4:16px}
+:root[data-density="compact"]{--s1:3px;--s2:6px;--s3:9px;--s4:12px}
+:root[data-density="comfortable"]{--s1:5px;--s2:10px;--s3:15px;--s4:20px}
+.subtabs{display:flex;flex-wrap:wrap;margin:var(--s3) 0 var(--s2)}
+.subtabs button{border-bottom:var(--hair) solid var(--line)}
+/* icons: Phosphor (MIT) SVGs in vendor/icons, drawn as masks so they take the text colour in both themes */
+.ic{display:inline-block;flex:none;width:1.15em;height:1.15em;background:currentColor;-webkit-mask:var(--ic) center/contain no-repeat;mask:var(--ic) center/contain no-repeat;vertical-align:-.22em}
+.ic-gear{--ic:url(../vendor/icons/gear.svg)}.ic-flag{--ic:url(../vendor/icons/flag-checkered.svg)}.ic-undo{--ic:url(../vendor/icons/arrow-counter-clockwise.svg)}
+.ic-dice{--ic:url(../vendor/icons/dice-six.svg)}.ic-wait{--ic:url(../vendor/icons/hourglass.svg)}.ic-sword{--ic:url(../vendor/icons/sword.svg)}.ic-caret{--ic:url(../vendor/icons/caret-right.svg)}
+.tabs .ic{margin-right:var(--s1)}
+
+/* ---------- combat mode: banner, roll window, GM card ---------- */
+.cmban{border:var(--hair) solid var(--line);padding:var(--s2) var(--s3);display:flex;flex-direction:column;background:var(--bg)}
 .cmban b{font-size:12px;text-transform:uppercase;letter-spacing:.1em;font-weight:600}.cmban span{font-size:17px;font-weight:600;line-height:1.2}
 .view-banner #app{min-height:0;position:relative}.view-banner .cmban{border-width:0;height:74px;justify-content:center}
-.bnhide{position:absolute;top:2px;right:4px}
-.cmtop{display:flex;gap:.6em;align-items:stretch;justify-content:space-between;flex-wrap:wrap;margin:.4em 0}.cmtop .cmban{flex:1;min-width:200px}.cmbtns{display:flex;flex-direction:column;gap:.3em;justify-content:center}
+.bnhide{position:absolute;top:var(--s1);right:var(--s2)}
 .cmnum{width:3.2em;text-align:center}
-.rollwin{border:1px solid var(--line);margin:.6em 0;padding:.2em .6em .4em}.rollwin h4{font-size:12px;border-bottom:1px solid var(--line);margin:0 0 .2em}
-.rollwin ol{margin:.2em 0;padding-left:1.4em;font-size:13px}.rollwin li i{font-style:normal;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
-.cmside{display:flex;gap:.6em;align-items:flex-start;border-top:1px solid var(--hl);padding:.3em 0}.cmside>input{width:9em;font-weight:600}
-.cmtog{list-style:none;padding:0;margin:.2em 0}.cmtog li{border-top:1px solid var(--hl);padding:.15em 0;font-size:13px}
-.view-hub #cbt .cmban{margin-bottom:.4em}
+.cmyou{border:var(--hair) solid var(--line);box-shadow:inset 4px 0 0 var(--fg);padding:var(--s2) var(--s3) var(--s2) calc(var(--s3) + 4px);font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin:var(--s2) 0}
+.rollwin{border:var(--hair) solid var(--line);margin:var(--s2) 0;padding:var(--s2) var(--s3)}.rollwin h4{font-size:12px;border-bottom:var(--hair) solid var(--line);margin:0 0 var(--s1);padding-bottom:var(--s1)}
+.rollwin ol{margin:var(--s1) 0 0;padding-left:1.4em;font-size:13px}.rollwin li{padding:1px 0}.rollwin li i{font-style:normal;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+.view-hub #cbt .cmban{margin-bottom:var(--s2)}
 
-/* ---------- combat card (GM), step list, info icon ---------- */
-.cmcard{border:1px solid var(--line);padding:.3em .7em .6em;margin:.5em 0}
-.cmhead{display:flex;align-items:center;gap:.6em;border-bottom:2px solid var(--line);padding-bottom:.15em}.cmhead h3{margin:0;font-size:15px}.cmrd{font-size:13px;text-transform:uppercase;letter-spacing:.08em}.sp{flex:1}
-.steps{list-style:none;margin:.5em 0;padding:0}.steps li{padding:.2em .5em;border:1px solid transparent;font-size:14px}.steps li.cur{background:var(--inv-bg);color:var(--inv-fg);font-weight:600}.steps li.done{color:var(--muted)}.steps li.todo{border-bottom:1px dotted var(--line)}.steps .res{font-weight:600;margin-left:.4em}.steps li.done .res{color:var(--fg)}
-.cmact{margin:.5em 0}.cmact .btn:not(.small){font-size:15px;padding:.45em 1.2em}.cmtyped{margin-top:.4em;display:flex;gap:.8em;flex-wrap:wrap;font-size:13px}.cmwait{margin:.2em 0;font-weight:600}
-.cmfoot{display:flex;align-items:center;gap:.6em;margin:.3em 0}.cmyou{border:2px solid var(--line);padding:.3em .7em;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin:.4em 0}
-.inf{display:inline-block;width:1.25em;height:1.25em;line-height:1.15em;border:1px solid var(--line);border-radius:50%;font-size:10px;font-style:italic;font-weight:600;text-align:center;cursor:help;vertical-align:middle}
-.cmsetup{border:1px dashed var(--line);padding:.2em .6em .6em;margin:.4em 0}.cmsides{display:grid;grid-template-columns:1fr 1fr;gap:.8em}.cmside2>input:first-child{font-weight:600;width:100%}.cmside2 .hint{margin:.2em 0}
-.cmrest{margin:.4em 0}.cmrest summary,.cmlog summary{cursor:pointer;font-size:12.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:600}.cmlog{margin-top:.4em}
+.cmcard{border:var(--hair) solid var(--line);padding:var(--s3) var(--s4) var(--s4);margin:var(--s2) 0}
+.cmhead{display:flex;align-items:center;gap:var(--s3);border-bottom:var(--rule) solid var(--line);padding-bottom:var(--s2);margin-bottom:var(--s3)}
+.cmhead h3{margin:0;font-size:15px;line-height:1}.cmrd{font-size:13px;text-transform:uppercase;letter-spacing:.08em;line-height:1}.sp{flex:1}
+.cmcard .btn{display:inline-flex;align-items:center;gap:var(--s1);padding:var(--s1) var(--s3);line-height:1.2}
+.cmcard .btn.small{padding:var(--s1) var(--s2);font-size:12px}
+.cmcard .btn.prim{padding:var(--s2) var(--s4);font-size:14px}
+.cmcard .ibtn{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:var(--hair) solid var(--line);font-size:16px}
+.steps{list-style:none;margin:0 0 var(--s3);padding:0;border:var(--hair) solid var(--line)}
+.steps li{display:flex;justify-content:space-between;align-items:baseline;gap:var(--s3);padding:var(--s2) var(--s3);font-size:14px;border-bottom:var(--hair) solid var(--hl)}.steps li:last-child{border-bottom:0}
+.steps li.cur{font-weight:600;box-shadow:inset 4px 0 0 var(--fg);padding-left:calc(var(--s3) + 4px)}.steps li.cur .lbl::before{content:"\25B8\00a0"}
+.steps li.done{color:var(--muted)}.steps li.done .res{color:var(--fg);font-weight:600}.steps .res{text-align:right}
+.cmact{margin:0 0 var(--s2)}.cmwait{margin:0 0 var(--s2);font-weight:600;display:flex;align-items:center;gap:var(--s2)}
+.cmtyped{margin-top:var(--s2);display:flex;gap:var(--s4);flex-wrap:wrap;font-size:13px}.cmtyped label,.cmside2 label,.cmcard .ctl label{display:flex;align-items:baseline;gap:var(--s2)}
+.cmfoot{display:flex;align-items:center;gap:var(--s3);margin:var(--s2) 0}.cmfoot .hint{margin:0}
+.inf{display:inline-block;width:1.25em;height:1.25em;line-height:1.15em;border:var(--hair) solid var(--line);border-radius:50%;font-size:10px;font-style:italic;font-weight:600;text-align:center;cursor:help;vertical-align:middle}
+.cmsetup{margin:0 0 var(--s3);padding-bottom:var(--s3)}.cmsetup:not(:last-child){border-bottom:var(--hair) solid var(--line)}.cmsetup h4{font-size:12px;margin:0 0 var(--s2)}
+.cmsides{display:grid;grid-template-columns:1fr 1fr;gap:var(--s4);align-items:start;margin-bottom:var(--s3)}
+.cmside2{display:flex;flex-direction:column;gap:var(--s2)}.cmside2>input:first-child{font-weight:600;width:100%}.cmside2 .hint{margin:0}
+label.chk{display:flex;align-items:flex-start;gap:var(--s2)}label.chk input{margin:.2em 0 0}
+.cmtok{width:100%;margin-bottom:var(--s2)}.cmtok td select{width:100%;border-bottom:0}
+.cmcard .ctl{display:flex;gap:var(--s4);flex-wrap:wrap;align-items:baseline;margin:var(--s3) 0}.cmcard .ctl label{flex-direction:column;align-items:stretch;gap:var(--s1)}
+.cmrest,.cmlog{margin:var(--s2) 0}
+.cmrest summary,.cmlog summary{display:flex;align-items:center;gap:var(--s1);cursor:pointer;list-style:none;font-size:12.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.cmrest summary::-webkit-details-marker,.cmlog summary::-webkit-details-marker{display:none}
+.cmrest summary::before,.cmlog summary::before{content:"";width:1.1em;height:1.1em;background:currentColor;-webkit-mask:url(../vendor/icons/caret-right.svg) center/contain no-repeat;mask:url(../vendor/icons/caret-right.svg) center/contain no-repeat;transition:transform .1s}
+.cmrest[open]>summary::before,.cmlog[open]>summary::before{transform:rotate(90deg)}
+.cmtog{list-style:none;padding:0;margin:var(--s1) 0 0}.cmtog li{border-top:var(--hair) solid var(--hl);padding:var(--s1) 0;font-size:13px}.cmtog label{display:flex;align-items:flex-start;gap:var(--s2);flex-wrap:wrap}.cmtog label input{margin:.2em 0 0}
+
+/* calculators and set-up rows: every input and select in a control row is the same height, so labels and fields sit on one line */
+.ctl input:not([type=checkbox]),.ctl select{height:28px}

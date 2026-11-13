@@ -12,4 +12,6 @@ Layout: `manifest.json`, `index.html` (action popover and sheet), `background.ht
 
 Licence: MIT, copyright Solid State Games 2026 ([LICENSE](LICENSE)). The vendored SDK is MIT (Owlbear Rodeo), see vendor/README.md.
 
+Icons: Phosphor Icons 2.1.1 (MIT, copyright (c) 2023 Phosphor Icons), only the SVGs used, in `vendor/icons/` with its licence.
+
 Unofficial fan work, built from the AD&D 1st Edition Dungeon Masters Guide, Players Handbook and Monster Manual. Not affiliated with or endorsed by the rights holders.

@@ -6,6 +6,7 @@
 const path = require('path'), fs = require('fs'), { connect } = require('./cdp.js');
 const BASE = process.argv[2] || 'http://127.0.0.1:8770', PORT = Number(process.argv[3] || 9331), OUT = path.join(__dirname, '..', 'REVIEW');
 fs.mkdirSync(OUT, { recursive: true });
+const shotBoth = async (pg, name, o) => { for (const t of ['light', 'dark']) { await pg.ev('document.documentElement.dataset.theme="' + t + '"'); await pg.shot(path.join(OUT, 'combat-3-' + name + '-' + t + '.png'), o); } await pg.ev('document.documentElement.removeAttribute("data-theme")'); };
 let fails = 0, total = 0; const check = (n, ok, d) => { total++; if (!ok) fails++; console.log((ok ? 'PASS ' : 'FAIL ') + n + (d ? '  (' + d + ')' : '')); };
 const ignorable = e => /fonts\.g(oogleapis|static)\.com|ERR_NAME_NOT_RESOLVED|ERR_INTERNET_DISCONNECTED|ERR_CONNECTION/.test(e);
 const pages = [];
@@ -51,6 +52,7 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
     check('tab 2 shows weapons, to-hit row, adjustments, HP, scarring', /Sword, long/.test(combat) && /To hit by armour class/i.test(combat) && /Hit points and hit dice/i.test(combat) && /Scarring and maiming/i.test(combat) && (await state(p)).sheet.ij[0][0] === 'Scar, left forearm' && (await state(p)).sheet.hl[1] === 7 && /Weapons: damage/i.test(combat));
     check('tab 2: weapon table has 9 adjustment columns', await p.ev('document.querySelectorAll(".wtab tr:nth-child(2) td").length') >= 14);
     await p.shot(path.join(OUT, 'sheet-2-combat.png'), { full: true });
+    await shotBoth(p, 'sheet-combat-page', { full: true });
 
     // tab 3 skills and look
     await p.click('[data-act="tab"][data-i="2"]'); await p.sleep(150);
@@ -276,7 +278,7 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
     const need = await g.ev('document.querySelector("#c-res .big").innerText.replace(/\\s+/g," ")');
     check('GM combat: fighter L7 vs AC3, long sword vs chain gives a number to hit', /Need on d20 \d+/i.test(need), need);
     for (const m of ['P', 'G', 'O']) { await g.click('.subtabs [data-m="' + m + '"]'); await g.sleep(100); await g.click('#c-roll'); await g.sleep(100); check('GM combat: ' + { P: 'pummel', G: 'grapple', O: 'overbear' }[m] + ' rolls', /(hits|fails)/.test(await g.ev('document.getElementById("c-wres").innerText'))); }
-    await g.click('.subtabs [data-m="hit"]'); await g.sleep(100); await g.shot(path.join(OUT, 'combat-2-gm-tools.png'), { full: true });
+    await g.click('.subtabs [data-m="hit"]'); await g.sleep(100); await shotBoth(g, 'gm-tools', { full: true });
     await g.shot(path.join(OUT, 'hub-gm-combat.png'), { full: true });
 
     // ---------- combat mode (rework): set-up behind the cog, one card, one button per step, tray waits, Not fighting, undo ----------
@@ -295,7 +297,7 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
         await g.click('[data-et="0"]'); await g.sleep(200);
         await g.set('#cm-n1', 'Goblins'); await g.set('#cm-rs', '1');
         await g.set('[data-tok="t2"]', '2'); await g.sleep(200);
-        await g.shot(path.join(OUT, 'combat-2-gm-setup.png'), { full: true });
+        await shotBoth(g, 'gm-setup', { full: true });
         await g.click('[data-act="start"]'); await g.sleep(500);
         const gs = () => g.ev('JSON.stringify(CombatUI._state().c)').then(JSON.parse);
         let cs = await gs();
@@ -305,7 +307,7 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
         check('combat: the player already in the room gets the banner popover at once', await pp.ev('!!document.getElementById("dev-pop")') && /Surprise/i.test(await pp.ev('document.getElementById("cbt").innerText')));
         const late = await open('dev=player', 560, 700); await late.sleep(500);
         check('combat: a player who joins AFTER combat starts gets the banner popover too', await late.ev('!!document.getElementById("dev-pop")') && /Surprise/i.test(await late.ev('document.getElementById("dev-pop").contentDocument.body.innerText')));
-        await g.shot(path.join(OUT, 'combat-2-gm-surprise.png'), { full: true });
+        await shotBoth(g, 'gm-surprise', { full: true });
         await g.click('[data-act="primary"]'); await g.sleep(250);
         check('combat: pressing the button with no die typed says what is missing and changes nothing', (await gs()).rd === 0 && !(await gs()).sd[0].sr && /Type the die/.test(await g.ev('document.getElementById("cm-msg").textContent')));
         await g.ev('document.getElementById("cm-in-0").value=1;document.getElementById("cm-in-1").value=2'); await g.click('[data-act="primary"]'); await g.sleep(400);
@@ -314,7 +316,7 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
         check('combat: the player sees the surprise rolls (final only) and "Your side acts now" during segment 1', /Goblins rolled 2 for surprise/.test(await pp.ev('document.getElementById("cbt").innerText')) && /Your side acts now/i.test(await pp.ev('document.getElementById("cbt").innerText')));
         await g.click('[data-act="primary"]'); await g.sleep(300);
         cs = await gs(); check('combat: "Party acts: done" ends the surprise segment and starts round 1 at initiative (typed boxes again)', cs.rd === 1 && cs.ph === 1 && await g.ev('document.querySelectorAll("#c-run .cmtyped input").length') === 2 && /Roll initiative/i.test(await g.ev('document.querySelector("[data-act=primary]").innerText')));
-        await g.shot(path.join(OUT, 'combat-2-gm-initiative-typed.png'), { full: true });
+        await shotBoth(g, 'gm-initiative-typed', { full: true });
         await g.ev('document.getElementById("cm-in-0").value=4;document.getElementById("cm-in-1").value=4'); await g.click('[data-act="primary"]'); await g.sleep(300);
         cs = await gs(); check('combat: typed 4 and 4 is a tie; both sides act together; the tie note shows', cs.w === 2 && cs.ph === 2 && /Both sides act: done/i.test(await g.ev('document.querySelector("[data-act=primary]").innerText')) && /longer weapon/.test(await g.ev('document.getElementById("c-run").innerText')));
         await g.click('[data-act="undo"]'); await g.sleep(300);
@@ -324,7 +326,7 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
         await g.click('[data-act="cog"]'); await g.set('#cm-rs', '2'); await g.sleep(300); await g.click('[data-act="cog"]'); await g.sleep(300);
         const wt = await g.ev('document.querySelector("#c-run .cmact").innerText');
         check('combat: Dice = tray shows who it is waiting for (Aldric for the Party, the GM for the Foes), with a sheet fallback and no roll button', /Waiting for Aldric \(your token\) to roll a d6 in the Dice tray/.test(wt) && /Waiting for the GM's d6/.test(wt) && /Roll in the sheet instead/i.test(wt) && await g.ev('!document.querySelector("#c-run [data-act=primary]")'), wt.replace(/\s+/g, ' '));
-        await g.shot(path.join(OUT, 'combat-2-gm-tray-waiting.png'), { full: true });
+        await shotBoth(g, 'gm-tray-waiting', { full: true });
         await g.sleep(1700);
         check('combat: a tray roll that was already there when the step asked (stale 6) is not used', (await gs()).ph === 1 && (await gs()).sd[0].in === 0);
         await g.ev('window.OBRX._dev.setTray("dev-player2", [3])'); await g.sleep(1800);
@@ -334,9 +336,10 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
         await g.ev('window.OBRX._dev.setTray("dev-gm", [2])'); await g.sleep(2000);
         await g.ev('document.getElementById("cm-log").open=true'); await g.sleep(200);
         cs = await gs(); check('combat: the GM\'s roll completes the step: Party 6, Goblins 2, Party wins; the log names who rolled', cs.sd[0].in === 6 && cs.sd[1].in === 2 && cs.w === 0 && cs.ph === 2 && /Party rolled 6 for initiative \(Owlbear Dice tray by Dev Player\)/.test(await g.ev('document.getElementById("c-run").innerText')) && /Goblins rolled 2 for initiative \(Owlbear Dice tray by Dev GM\)/.test(await g.ev('document.getElementById("c-run").innerText')));
+        await shotBoth(g, 'gm-card-midround', { full: true });
         await pp.sleep(400);
         check('combat: the player on the acting side sees "Your side acts now" and the short log (final rolls only)', /Your side acts now/i.test(await pp.ev('document.getElementById("cbt").innerText')) && /Party rolled 6 for initiative/.test(await pp.ev('document.getElementById("cbt").innerText')));
-        await pp.shot(path.join(OUT, 'combat-2-player-acts.png'), { full: true });
+        await shotBoth(pp, 'player-acts', { full: true });
         await g.click('[data-act="primary"]'); await g.sleep(300); await pp.sleep(400);
         check('combat: "Party acts: done" hands over to the Goblins ("Goblins act: done"); the player\'s line goes away', /Goblins act: done/i.test(await g.ev('document.querySelector("[data-act=primary]").innerText')) && !/Your side acts now/i.test(await pp.ev('document.getElementById("cbt").innerText')));
         // sheet fallback, restrictions, move, undo
