@@ -16,9 +16,10 @@ const bytes = o => new Blob([JSON.stringify(o)]).size;
 export default function makeMock(role) {
     const me = role === 'gm' ? PLAYERS[0] : PLAYERS[1];
     const listeners = new Set();
-    const metaListeners = new Set(), pops = {};
+    const metaListeners = new Set(), partyL = new Set(), playerL = new Set(), pops = {};
     const fireMeta = () => { const m = clone(load().meta || {}); metaListeners.forEach(f => f(m)); };
-    const fire = () => { const items = load().items; listeners.forEach(f => f(items)); fireMeta(); };
+    const others = () => PLAYERS.filter(p => p.id !== me.id).map(p => Object.assign(clone(p), { metadata: clone((load().pm || {})[p.id] || {}) }));
+    const fire = () => { const items = load().items; listeners.forEach(f => f(items)); fireMeta(); partyL.forEach(f => f(others())); playerL.forEach(f => f(Object.assign(clone(me), { metadata: clone((load().pm || {})[me.id] || {}) }))); };
     window.addEventListener('storage', e => { if (e.key === STORE) fire(); });
     if (!localStorage.getItem(STORE)) save(seed());
     const clone = o => JSON.parse(JSON.stringify(o));
@@ -34,9 +35,9 @@ export default function makeMock(role) {
             id: me.id,
             getId: async () => me.id, getRole: async () => me.role, getName: async () => me.name, getColor: async () => me.color,
             hasPermission: async p => me.role === 'GM' || (p === 'CHARACTER_UPDATE' && !!load().grant),
-            getSelection: async () => [], getMetadata: async () => clone((load().pm || {})[me.id] || {}), setMetadata: async () => {}, onChange: () => () => {}
+            getSelection: async () => [], getMetadata: async () => clone((load().pm || {})[me.id] || {}), setMetadata: async () => {}, onChange: cb => { playerL.add(cb); return () => playerL.delete(cb); }
         },
-        party: { getPlayers: async () => PLAYERS.filter(p => p.id !== me.id).map(p => Object.assign(clone(p), { metadata: clone((load().pm || {})[p.id] || {}) })), onChange: () => () => {} },
+        party: { getPlayers: async () => others(), onChange: cb => { partyL.add(cb); return () => partyL.delete(cb); } },
         scene: {
             isReady: async () => true, onReadyChange: () => () => {},
             getMetadata: async () => clone(load().meta || {}),
@@ -94,6 +95,6 @@ export default function makeMock(role) {
         room: { getPermissions: async () => (load().grant ? ['CHARACTER_UPDATE'] : []), onPermissionsChange: () => () => {} },
         // dev only helpers used by the dev bar
         _dev: { toggleGrant() { const s = load(); s.grant = !s.grant; save(s); fire(); return s.grant; }, grant: () => !!load().grant,
-            reset() { save(seed()); fire(); }, setTray(pid, values) { const s = load(); s.pm = s.pm || {}; s.pm[pid] = { 'rodeo.owlbear.dice/rollValues': values }; save(s); fire(); }, addToken(name) { const s = load(); s.items.push({ id: 't' + Date.now(), name, layer: 'CHARACTER', type: 'IMAGE', createdUserId: me.id, metadata: {} }); save(s); fire(); } }
+            reset() { save(seed()); fire(); }, setTray(pid, values) { const s = load(); s.pm = s.pm || {}; s.pm[pid] = { 'rodeo.owlbear.dice/rollValues': values, 'rodeo.owlbear.dice/roll': { n: Math.random() } }; save(s); fire(); }, addToken(name) { const s = load(); s.items.push({ id: 't' + Date.now(), name, layer: 'CHARACTER', type: 'IMAGE', createdUserId: me.id, metadata: {} }); save(s); fire(); } }
     };
 }
