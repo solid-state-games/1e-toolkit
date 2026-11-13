@@ -162,6 +162,7 @@ const CombatState = (function () {
             const ready = surpriseReady(c) && maxSl(c) > 0, m = maxSl(c);
             L.push({ k: "sur", label: "Surprise rolls", st: ready ? "done" : "cur", res: ready ? c.sd.filter(function (s) { return s.sl > 0; }).map(function (s) { return s.n + " lose " + s.sl; }).join(", ") : "" });
             if (ready) for (let i = 1; i <= m; i++) { const f = freeSides(c, i); L.push({ k: "seg", label: "Segment " + i + ": " + (f.length === 1 ? acts(n(f[0])) : "both sides may act"), st: i < c.sg ? "done" : i === c.sg ? "cur" : "todo", res: "" }); }
+            L.push({ k: "r1", label: "Round 1: initiative", st: "todo", res: "" });
             return L;
         }
         const add = function (k, p, label, res) { L.push({ k: k, label: label, st: p < c.ph ? "done" : p === c.ph ? "cur" : "todo", res: p < c.ph ? res || "" : "" }); };
@@ -276,7 +277,7 @@ const CombatState = (function () {
             if (me.onWho) why.push(me.onWho.split(", ")[0]);
             if (me.onWho) pg.push(me.onWho);
             if (o.sur !== DEF) { why.push("other side surprises on 1-" + o.sur + " (" + o.surWho.split(", ")[0] + ")"); pg.push(o.surWho); }
-            return { ra: ra, txt: (ra ? "1-" + ra : "cannot be surprised") + (why.length ? ": " + why.join("; ") : ": the usual 1-2"), pg: pg.join("; ") || "DMG p.61" };
+            return { ra: ra, txt: (ra ? "1-" + ra : "cannot be surprised") + (why.length ? ": " + why.join("; ") : ": usual"), pg: pg.join("; ") || "DMG p.61" };
         });
     }
     function applyRanges(c, derived) { derived.forEach(function (d, i) { if (!c.sd[i].ov) c.sd[i].ra = d.ra; }); }

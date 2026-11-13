@@ -33,8 +33,8 @@ const CombatUI = (function () {
 
     /* ----- shared: data in, log out ----- */
     function ingest(meta) { cur = Object.assign({ meta: meta || {} }, CS.read(meta)); if (!cur.c) { hist = []; wait = null; } render(); }
-    function rollWinHtml(c) {
-        const list = CS.visible(cur.logs[c.rd] || []);
+    function rollWinHtml(c, player) {
+        const list = CS.visible(cur.logs[c.rd] || []).filter(function (e) { return !player || e[1] !== 9; }); // players don't see GM undos
         return '<div class="rollwin"><h4>' + (c.rd === 0 ? "Surprise rolls" : "Round " + c.rd + " rolls") + "</h4>" + (list.length ? "<ol>" + list.map(function (e) { return "<li>" + (e[0] ? "<i>segment " + e[0] + "</i> " : "") + esc(CS.entryText(e, c)) + "</li>"; }).join("") + "</ol>" : '<p class="muted small">No rolls yet this round.</p>') + "</div>";
     }
     function bannerHtml() { const b = CS.banner(cur.c); return '<div class="cmban"><b>' + esc(b.a) + "</b><span>" + esc(b.b) + "</span></div>"; }
@@ -45,7 +45,7 @@ const CombatUI = (function () {
             if (c) {
                 const mine = items.filter(function (it) { return own(it) ? own(it) === TK.me : it.createdUserId === TK.me; }).map(function (it) { return CS.sideOf(c, c.ro.indexOf(it.id)); });
                 const acting = CS.actingSides(c);
-                h = bannerHtml() + (mine.some(function (s) { return s < 2 && acting.indexOf(s) >= 0; }) ? '<p class="cmyou">Your side acts now</p>' : "") + rollWinHtml(c);
+                h = (mine.some(function (s) { return s < 2 && acting.indexOf(s) >= 0; }) ? '<p class="cmyou">Your side acts now</p>' : "") + rollWinHtml(c, true); // the banner popover already shows round and step
             } else h = '<p class="muted">No combat is running.</p>';
             playerRoot.innerHTML = h;
         }
