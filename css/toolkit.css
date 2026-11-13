@@ -266,3 +266,4 @@ label.chk{display:flex;align-items:flex-start;gap:var(--s2)}label.chk input{marg
 /* attack card inside the combat card: same hairline box as the roll window */
 .cmatk{border:var(--hair) solid var(--line);padding:var(--s2) var(--s3);margin:0 0 var(--s3)}.cmatk h4{display:flex;align-items:center;gap:var(--s1);font-size:12px;margin:0 0 var(--s2);padding-bottom:var(--s1);border-bottom:var(--hair) solid var(--line)}
 .cmatk p{margin:var(--s1) 0}.cmprob{margin:var(--s1) 0 var(--s2);padding-left:1.2em;font-size:13px}.cmrow{display:flex;gap:var(--s2);align-items:center;flex-wrap:wrap}
+.cmforms{list-style:none;margin:var(--s1) 0 var(--s2);padding:0;font-size:13px}.cmforms li{padding:1px 0}.cmforms li::before{content:"\25AA\00a0"}

@@ -16,6 +16,17 @@ const bytes = o => new Blob([JSON.stringify(o)]).size;
 export default function makeMock(role) {
     const me = role === 'gm' ? PLAYERS[0] : PLAYERS[1];
     const listeners = new Set();
+    const localItems = []; let lid = 0;
+    // dev map: a small overlay of the tokens and the local (per client) items, so a screenshot shows the dots
+    const drawMap = () => {
+        let m = document.getElementById('dev-map'); if (m) m.remove();
+        if (!localItems.length) return;
+        m = document.createElement('div'); m.id = 'dev-map'; m.style.cssText = 'position:fixed;left:8px;bottom:8px;width:340px;height:140px;background:#ddd;border:1px solid #000;z-index:9990;overflow:hidden';
+        load().items.filter(i => i.position && i.layer === 'CHARACTER').forEach(i => { const t = document.createElement('div'); t.style.cssText = 'position:absolute;left:' + (i.position.x / 2 - 25 + 20) + 'px;top:' + (i.position.y / 2 - 25 + 30) + 'px;width:50px;height:50px;background:#777;border:1px solid #333;font:9px sans-serif;color:#fff'; t.textContent = i.name.split(' ')[0]; m.appendChild(t); });
+        localItems.forEach(i => { const d = document.createElement('div'), w = (i.width || 10) / 2, h = (i.height || i.width || 10) / 2; d.className = 'dev-dot'; d.dataset.state = (i.metadata[Object.keys(i.metadata)[0]] || {}).s;
+            d.style.cssText = 'position:absolute;box-sizing:border-box;left:' + (i.position.x / 2 + 20 - w / 2) + 'px;top:' + (i.position.y / 2 + 30 - h / 2) + 'px;width:' + w + 'px;height:' + h + 'px;background:' + i.fillColor + ';border:' + Math.max(1, (i.strokeWidth || 1) / 2) + 'px solid ' + i.strokeColor + ';border-radius:' + (i.shapeType === 'CIRCLE' ? '50%' : '0') + ';transform:rotate(' + (i.rotation || 0) + 'deg)'; m.appendChild(d); });
+        document.body.appendChild(m);
+    };
     const ctxMenus = {}, tools = {}, modes = {}, metaListeners = new Set(), partyL = new Set(), playerL = new Set(), pops = {};
     const fireMeta = () => { const m = clone(load().meta || {}); metaListeners.forEach(f => f(m)); };
     const others = () => PLAYERS.filter(p => p.id !== me.id).map(p => Object.assign(clone(p), { metadata: clone((load().pm || {})[p.id] || {}) }));
@@ -40,6 +51,11 @@ export default function makeMock(role) {
         party: { getPlayers: async () => others(), onChange: cb => { partyL.add(cb); return () => partyL.delete(cb); } },
         scene: {
             isReady: async () => true, onReadyChange: () => () => {},
+            local: {
+                getItems: async f => clone(localItems.filter(f || (() => true))),
+                addItems: async its => { its.forEach(i => { i.id = 'l' + (++lid); localItems.push(clone(i)); }); drawMap(); },
+                deleteItems: async ids => { for (let k = localItems.length - 1; k >= 0; k--) if (ids.indexOf(localItems[k].id) >= 0) localItems.splice(k, 1); drawMap(); }
+            },
             getMetadata: async () => clone(load().meta || {}),
             // like OBR: a patch; a key set to undefined is removed. Only the GM may write.
             setMetadata: async patch => {

@@ -739,6 +739,40 @@ if (fs.existsSync(path.join(root, '..', '..', '..', 'ADD-BOOKS-PDF', 'TEXT'))) {
     check('(l) attack log entry is kind 2 with actor, target, roll, need and the roll source; it is visible to everyone', ae[1] === 2 && ae[2] === 0 && ae[3] === 1 && ae[4] === 14 && ae[5] === 12 && (ae[8] & 3) === 1 && CS.visible([ae]).length === 1 && CS.entryText(ae, c3) === 'Aldric attacks Goblin 3: rolled 14, needs 12: hit');
 }
 
+
+// ---- (m) combat step 2b: attack allowance per round, refusal and override, undo, dots
+{
+    const CS = G('CombatState'), CA = G('CombatAttack'), W = n => G('WEAPONS').filter(w => w.name === n)[0];
+    const mk = () => { const c = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.skipSurprise(c); return c; };
+    const pc = (cl, lv, pf) => CA.facts({ name: 'P', metadata: { [SR.KEY]: SR.sanitize(Object.assign(SR.blank(), { race: 'Human', cl: cl, lv: lv, sc: [16, 12, 12, 12, 14, 12], pf: pf || ['Sword, Long & scabbard'] })) } });
+    const at = (f, wi, rd, sg) => { const c = mk(); c.rd = rd; c.sg = sg || 0; return CA.perRound(f, wi, c); };
+    check('(m) PHB p.38 rate of fire is read as printed: bow 2, light crossbow 1, heavy crossbow 1/2, dart 3, hand axe 1', [['Bow, long', 2], ['Crossbow, light', 1], ['Crossbow, heavy', 0.5], ['Dart', 3], ['Axe, hand', 1]].every(x => CA.rateOf(W(x[0])) === x[1]));
+    const f7 = pc(['Fighter'], [7]), f13 = pc(['Fighter'], [13]), f6 = pc(['Fighter'], [6]), r8 = pc(['Ranger'], [8]), r15 = pc(['Ranger'], [15]), r7 = pc(['Ranger'], [7]), cl = pc(['Cleric'], [9]), mc = pc(['Fighter', 'Magic-User'], [7, 7]), pal = pc(['Paladin'], [13]);
+    check('(m) attack routines (PHB p.25): fighter and paladin 3/2 from 7th and 2/1 from 13th, ranger 3/2 from 8th and 2/1 from 15th, others 1; multi-class uses the best', [f6, r7, cl].every(f => f.routines === '1') && f7.routines === '3/2' && r8.routines === '3/2' && f13.routines === '2' && r15.routines === '2' && pal.routines === '2' && mc.routines === '3/2');
+    check('(m) 3/2 is two routines in odd rounds and one in even rounds; 2/1 is two every round; 1 is one (DMG p.63)', at(f7, 0, 1).max === 2 && at(f7, 0, 2).max === 1 && at(f7, 0, 3).max === 2 && at(f13, 0, 2).max === 2 && at(f6, 0, 1).max === 1 && at(f6, 0, 2).max === 1 && at(f7, 0, 1).unit === 'attack' && at(r8, 0, 5).max === 2);
+    const bow = pc(['Fighter'], [7], ['Sword, Long & scabbard', 'Bow, long', 'Crossbow, heavy', 'Crossbow, light', 'Dart']), wi = n => bow.weapons.findIndex(w => w.name === n);
+    check('(m) missiles: one routine of the rate in shots (bow 2, light crossbow 1, dart 3), not multiplied by the fighter\'s 3/2; heavy crossbow fires on odd rounds only', at(bow, wi('Bow, long'), 1).max === 2 && at(bow, wi('Bow, long'), 2).max === 2 && at(bow, wi('Crossbow, light'), 2).max === 1 && at(bow, wi('Dart'), 1).max === 3 && at(bow, wi('Crossbow, heavy'), 1).max === 1 && at(bow, wi('Crossbow, heavy'), 2).max === 0 && at(bow, wi('Bow, long'), 1).unit === 'shot' && at(bow, wi('Bow, long'), 1).per === 1);
+    check('(m) surprise segments (DMG p.62): missiles at three times the rate (bow 6, light crossbow 3, heavy 1); melee counts each segment as a round (3/2: 2 then 1; 2/1: 2 each); switching the allowance off gives normal rounds', at(bow, wi('Bow, long'), 0, 1).max === 6 && at(bow, wi('Crossbow, light'), 0, 2).max === 3 && at(bow, wi('Crossbow, heavy'), 0, 1).max === 1 && at(f7, 0, 0, 1).max === 2 && at(f7, 0, 0, 2).max === 1 && at(f13, 0, 0, 2).max === 2 && (() => { const c = mk(); c.rd = 0; c.sg = 1; CS.setToggle(c, 'cm.surprise-attacks', false); return CA.perRound(bow, wi('Bow, long'), c).max === 2; })());
+    const ape = CA.facts({ name: 'Ape, carnivorous', metadata: {} }), ogre = CA.facts({ name: 'Ogre', metadata: {} });
+    check('(m) a monster makes one routine of the MM attack count, each its own d20 (claw/claw/bite = 3 rows with their damage forms); "1 or 2" and "see below" count as 1', ape.n === 3 && ape.forms.join() === '1-4,1-4,1-8' && at(ape, 0, 1).max === 1 && at(ape, 0, 1).per === 3 && at(ape, 0, 1).unit === 'routine' && ogre.n === 1 && CA.mmAttacks({ attacks: '1 or 2' }) === 1 && CA.mmAttacks({ attacks: 'See below' }) === 1 && CA.mmAttacks({ attacks: '2 or 1' }) === 2 && at(ape, 0, 0, 1).max === 1);
+    // used attacks live in the token's cs with a round stamp (lazy reset)
+    const cc = mk(); cc.rd = 3; const it = { metadata: { [CA.CS]: { rs: CA.stamp(cc), at: 1, mx: 2 } } };
+    check('(m) the token\'s `cs` is valid only in its stamped round (lazy reset, spec 8.4); a surprise segment is its own stamp', CA.csOf(it, cc).at === 1 && (() => { cc.rd = 4; return CA.csOf(it, cc).at === 0; })() && (() => { const s = mk(); s.rd = 0; s.sg = 1; const a = CA.stamp(s); s.sg = 2; return a !== CA.stamp(s) && CA.csOf({ metadata: { [CA.CS]: { rs: a, at: 2, mx: 2 } } }, s).at === 0; })() && CA.csOf({ metadata: {} }, cc).at === 0);
+    // refusal and override
+    const nm = { a: 'Aldric', b: 'Goblin' }, ac = mk(); CS.step(ac, {}, [5, 2], 0, []);
+    const pr = (used, max, unit) => CA.problems(ac, 'a', 'b', nm, { used: used, max: max, unit: unit || 'attack' });
+    check('(m) one attack after the last is refused with a reason ("Aldric has used all 2 attacks this round (2 of 2)"); under the limit and with "Attacks per round" off it is fine; a heavy crossbow out of turn says why', pr(1, 2).length === 0 && /used all 2 attacks this round \(2 of 2\)/.test(pr(2, 2)[0].msg) && pr(2, 2)[0].id === 'multi' && /used all 1 attack this round/.test(pr(1, 1)[0].msg) && (CS.setToggle(ac, 'cm.multi-attack', false), pr(2, 2).length === 0) && (CS.setToggle(ac, 'cm.multi-attack', true), /every other round/.test(pr(0, 0)[0].msg)) && CA.problems(ac, 'a', 'b', nm).length === 0);
+    // undo with the cs as extra
+    const uc = mk(), ul = {}, us = []; CS.step(uc, ul, [5, 2], 0, []); const b4 = CS.takeSnap(uc, ul); CS.logAdd(ul, 1, CS.entry(0, 2, 0, 14, 12, 4, 'x')); CS.pushUndo(us, b4, ul, 'Attack: Aldric', { id: 'a', cs: { rs: 100, at: 1, mx: 2 } });
+    const ur = CS.undo(uc, ul, JSON.parse(JSON.stringify(us)));
+    check('(m) an attack goes through pushUndo with its previous `cs` as extra: undo removes the log line and hands the extra back to restore the token', ur.label === 'Attack: Aldric' && ur.x.id === 'a' && ur.x.cs.at === 1 && !ul[1].some(e => e[1] === 2));
+    // dots
+    const dc = mk(), cs = (rd, at, mx) => ({ rs: rd * 100, at: at, mx: mx });
+    check('(m) dot state: none before anything; open dot after some attacks; filled when all are used; filled when the side has finished acting (its phase passed)', CA.dotState(dc, 0, null) === null && CA.dotState(dc, 0, cs(1, 1, 2)) === 'some' && CA.dotState(dc, 0, cs(1, 2, 2)) === 'done' && CA.dotState(dc, 0, cs(0, 2, 2)) === null && (() => { CS.step(dc, {}, [5, 2], 0, []); const a = CA.dotState(dc, 0, null) === null; CS.advance(dc); return a && CA.dotState(dc, 0, null) === 'done' && CA.dotState(dc, 1, null) === null && (CS.advance(dc), CA.dotState(dc, 1, null) === 'done'); })());
+    const sd = CS.create(['a', 'b', 'c'], [0, 1, 2], ['Party', 'Goblins'], [2, 2]); CS.rollSurprise(sd, 0, 1); CS.rollSurprise(sd, 1, 2);
+    check('(m) dot state in surprise: the surprised side shows the slash dot while its segments last; a token that is not fighting or not in the roster has none; "surprised side cannot act" off removes the slash', CA.dotState(sd, 1, null) === 'unable' && CA.dotState(sd, 0, null) === null && CA.dotState(sd, 2, cs(0, 1, 2)) === null && CA.dotState(sd, -1, null) === null && (CS.setToggle(sd, 'cm.surprise-bar', false), CA.dotState(sd, 1, null) === null));
+}
+
 const html = ['index.html', 'guide.html', 'js/app.js', 'css/toolkit.css'].map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
 check('no TSR or WotC marks, no em dashes in UI copy', !/TSR|Wizards of the Coast|ADVANCED D&D|—/.test(html.replace(credit, '')));
 

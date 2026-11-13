@@ -16,9 +16,11 @@ const CombatState = (function () {
         { k: "cm.declare", b: 1, on: 0, t: "Declare actions", d: "Add a declare step at the start of each round.", pg: "DMG p.71, p.65" },
         { k: "cm.surprise", b: 2, on: 1, t: "Surprise", d: "Roll surprise, d6 per side, before round 1.", pg: "DMG p.61-62; PHB p.102" },
         { k: "cm.surprise-dex", b: 3, on: 1, t: "Dexterity reaction in surprise", d: "A PC's reaction adjustment shortens only that PC's lost segments.", pg: "DMG p.62, p.71; PHB p.11" },
+        { k: "cm.surprise-attacks", b: 4, on: 1, t: "Surprise attack allowance", d: "In a surprise segment the active side attacks as if it were a whole round; missiles at three times the rate.", pg: "DMG p.62, p.71; PHB p.103" },
         { k: "cm.surprise-bar", b: 5, on: 1, t: "Surprised side cannot act", d: "The banner bars the surprised side during its lost segments.", pg: "DMG p.61" },
         { k: "cm.initiative", b: 6, on: 1, t: "Roll initiative", d: "d6 per side each round, higher acts first, a tie is simultaneous. Off: the GM picks who goes first.", pg: "DMG p.62-63; PHB p.104" },
-        { k: "cm.phase-order", b: 7, on: 1, t: "Side order", d: "Winner acts, then the other side. Off: both sides act in any order.", pg: "DMG p.61, p.63" }];
+        { k: "cm.phase-order", b: 7, on: 1, t: "Side order", d: "Winner acts, then the other side. Off: both sides act in any order.", pg: "DMG p.61, p.63" },
+        { k: "cm.multi-attack", b: 10, on: 1, t: "Attacks per round", d: "Refuse an attack after a token's last one this round (fighter 3/2 and 2/1, missile rate, monster attacks).", pg: "PHB p.25, p.38; DMG p.63" }];
     const tog = function (name) { return TOGGLES.filter(function (t) { return t.k === name; })[0]; };
     function isOn(c, name) { const t = tog(name); return !!(t.on ^ ((c.op >> t.b) & 1)); }
     function setToggle(c, name, on) { if (isOn(c, name) !== !!on) c.op ^= (1 << tog(name).b); }

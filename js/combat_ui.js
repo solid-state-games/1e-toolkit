@@ -22,6 +22,8 @@ const CombatUI = (function () {
     const defSide = function (it) { return sheetOf(it) || ownerOf(it) ? 0 : 1; };
     const inf = function (t) { return t ? ' <span class="inf" title="' + esc(t) + '" aria-label="' + esc(t) + '">i</span>' : ""; };
     const S = function () { return cur.c || draft; };
+    // the acted dots are drawn by js/combat_dots.js on each client; this per-browser switch is read there (localStorage, so the background page sees it)
+    const dotsOn = function () { try { return localStorage.getItem("tk-dots") !== "0"; } catch (e) { return true; } };
     const ic = function (n) { return '<i class="ic ic-' + n + '" aria-hidden="true"></i>'; };
 
     /* ----- who rolls, what the ranges are ----- */
@@ -106,24 +108,34 @@ const CombatUI = (function () {
         const af = CA.facts(A), tf = CA.facts(T), names = {}; names[A.id] = A.name || "Unnamed token"; names[T.id] = T.name || "Unnamed token";
         const ac = atk.ac !== undefined && atk.ac !== "" ? Number(atk.ac) : tf.ac, bonus = Number(atk.bonus) || 0;
         const calc = CA.need(af, atk.wi || 0, ac, tf.type, bonus), need = calc !== null ? calc : (atk.need !== undefined && atk.need !== "" ? Number(atk.need) : null);
-        return { A: A, T: T, af: af, tf: tf, names: names, ac: ac, bonus: bonus, need: need, auto: calc !== null, probs: CA.problems(c, A.id, T.id, names) };
+        const al = CA.perRound(af, atk.wi || 0, c), used = CA.csOf(A, c).at;
+        return { A: A, T: T, af: af, tf: tf, names: names, ac: ac, bonus: bonus, need: need, auto: calc !== null, al: al, used: used,
+            probs: CA.problems(c, A.id, T.id, names, { used: used, max: al.max, unit: al.unit }) };
     }
-    function resolveAttack(roll, src, who) {
+    // vals: one d20 per row (a monster's routine has one row per attack form; everything else one). Counts as one attack used on the token's `cs`.
+    function resolveAttack(vals, src, who) {
         const c = cur.c, q = pendAtk(); if (!q) return;
-        const m = atkModel(c, q); if (!m || m.need === null) { msg = "Enter the number needed on the d20."; render(); return; }
+        vals = [].concat(vals); const m = atkModel(c, q); if (!m || m.need === null) { msg = "Enter the number needed on the d20."; render(); return; }
+        const prev = (m.A.metadata || {})[CA.CS] || null, next = { rs: CA.stamp(c), at: m.used + 1, mx: m.al.max };
         mutate(function (c, logs, sum, stack) {
-            const before = CS.takeSnap(c, logs), hit = roll >= m.need, ai = c.ro.indexOf(m.A.id), ti = c.ro.indexOf(m.T.id);
-            const e = CS.entry(c.sg, 2, ai, roll, m.need, src | (hit ? 4 : 0), CA.text(m.names[m.A.id], m.names[m.T.id], roll, m.need, hit, m.probs.length > 0), who && who[0]); e[3] = ti;
-            CS.logAdd(logs, c.rd, e); c.ak = c.ak || {}; c.ak[q.pid] = q.n;
-            CS.pushUndo(stack, before, logs, "Attack: " + m.names[m.A.id]);
-        });
+            const before = CS.takeSnap(c, logs), ai = c.ro.indexOf(m.A.id), ti = c.ro.indexOf(m.T.id);
+            vals.forEach(function (v, j) {
+                const hit = v >= m.need, form = m.al.forms ? m.al.forms[j] : m.al.per > 1 ? "attack " + (j + 1) : "";
+                const e = CS.entry(c.sg, 2, ai, v, m.need, src | (hit ? 4 : 0), CA.text(m.names[m.A.id], m.names[m.T.id], v, m.need, hit, m.probs.length > 0, form), who && who[j]); e[3] = ti; CS.logAdd(logs, c.rd, e);
+            });
+            c.ak = c.ak || {}; c.ak[q.pid] = q.n;
+            CS.pushUndo(stack, before, logs, "Attack: " + m.names[m.A.id], { id: m.A.id, cs: prev });
+        }).then(function () { return setCs(m.A.id, next); });
     }
+    // the token's attack count (item metadata; GM only). null removes it.
+    function setCs(id, v) { return TK.OBR.scene.items.updateItems([id], function (d) { if (v) d[0].metadata[CA.CS] = v; else delete d[0].metadata[CA.CS]; }).catch(function (e) { say(e.message, "ERROR"); }); }
     function dismissAttack() { const q = pendAtk(); if (q) mutate(function (c) { c.ak = c.ak || {}; c.ak[q.pid] = q.n; }); }
     function attackHtml(c) {
         const q = pendAtk(); if (!q) return "";
         const m = atkModel(c, q);
-        let h = '<div class="cmatk"><h4>' + ic("sword") + "Attack</h4>";
-        if (!m) return h + '<p>One of the tokens is no longer on the scene.</p><button type="button" class="btn ghost small" data-act="atkno">Dismiss</button></div>';
+        if (!m) return '<div class="cmatk"><h4>' + ic("sword") + "Attack</h4><p>One of the tokens is no longer on the scene.</p>" + '<button type="button" class="btn ghost small" data-act="atkno">Dismiss</button></div>';
+        const unit = { attack: "Attack", shot: "Shot", routine: "Routine" }[m.al.unit];
+        let h = '<div class="cmatk"><h4>' + ic("sword") + unit + " " + Math.min(m.used + 1, Math.max(m.al.max, 1)) + " of " + m.al.max + "</h4>";
         h += "<p><b>" + esc(m.names[m.A.id]) + "</b> attacks <b>" + esc(m.names[m.T.id]) + "</b> <span class=\"muted\">(asked by " + esc(q.pname) + ")</span></p>";
         if (m.probs.length && !atk.ov) return h + "<ul class=\"cmprob\">" + m.probs.map(function (p) { return "<li>" + esc(p.msg) + "</li>"; }).join("") + '</ul><div class="cmrow"><button type="button" class="btn small" data-act="atkov">Override and attack</button><button type="button" class="btn ghost small" data-act="atkno">Dismiss</button></div></div>';
         h += '<div class="ctl">';
@@ -132,9 +144,13 @@ const CombatUI = (function () {
         h += '<label>Target AC <input type="number" class="cmnum" data-atk="ac" value="' + (m.ac === null || m.ac === undefined || isNaN(m.ac) ? "" : m.ac) + '"></label><label>Bonus to hit <input type="number" class="cmnum" data-atk="bonus" value="' + m.bonus + '"></label>';
         if (!m.auto) h += '<label>Needs on d20 <input type="number" class="cmnum" data-atk="need" value="' + (atk.need !== undefined ? esc(atk.need) : "") + '"></label>';
         h += "</div><p><b>" + (m.need === null ? "Needs: type the AC or the number" : "Needs " + m.need + " or more on a d20") + "</b>" + (m.tf.why ? " " + esc(m.tf.why) : "") + "</p>";
-        const src = c.rs;
+        const rows = m.al.per, src = c.rs, label = function (j) { return m.al.forms ? m.al.forms[j] : rows > 1 ? "attack " + (j + 1) : ""; };
+        if (rows > 1) h += '<ul class="cmforms">' + Array.apply(null, Array(rows)).map(function (x, j) { return "<li>" + esc(label(j)) + (m.need !== null ? ": needs " + m.need : "") + "</li>"; }).join("") + "</ul>";
         if (src === 2) h += waitHtml(c) + '<div class="cmrow"><button type="button" class="btn ghost small" data-act="atksheet">' + ic("dice") + "Roll in the sheet instead</button> ";
-        else h += '<div class="cmrow"><button type="button" class="btn prim" data-act="atkroll">' + ic("dice") + (src === 1 ? "Apply the d20" : "Roll d20") + "</button> " + (src === 1 ? '<label>d20 <input type="number" min="1" max="20" id="cm-atk-in" class="cmnum"></label> ' : "");
+        else {
+            h += '<div class="cmrow"><button type="button" class="btn prim" data-act="atkroll">' + ic("dice") + (src === 1 ? "Apply the d20" + (rows > 1 ? "s" : "") : rows > 1 ? "Roll " + rows + " d20" : "Roll d20") + "</button> ";
+            if (src === 1) h += Array.apply(null, Array(rows)).map(function (x, j) { return '<label>' + (rows > 1 ? esc(label(j)) + " " : "") + 'd20 <input type="number" min="1" max="20" id="cm-atk-in-' + j + '" class="cmnum"></label>'; }).join(" ") + " ";
+        }
         return h + '<button type="button" class="btn ghost small" data-act="atkno">Dismiss</button></div></div>';
     }
 
@@ -146,7 +162,7 @@ const CombatUI = (function () {
     // What the tray is being waited on for right now: an attack's d20 first, else the step's d6 (one per side that must roll)
     function waitSpec(c) {
         const q = pendAtk(), m = q && c.rs === 2 ? atkModel(c, q) : null;
-        if (m && (!m.probs.length || atk.ov)) return { key: ["a", q.pid, q.n, atk.ov].join(":"), max: 20, wants: [atkRoller(c, m.A)], labels: [""], name: function () { return m.names[m.A.id]; }, done: function (v, w) { resolveAttack(v[0], 2, w); } };
+        if (m && (!m.probs.length || atk.ov)) return { key: ["a", q.pid, q.n, atk.ov, atk.wi || 0].join(":"), max: 20, wants: Array.apply(null, Array(m.al.per)).map(function () { return atkRoller(c, m.A); }), labels: Array.apply(null, Array(m.al.per)).map(function (x, j) { return m.al.forms ? m.al.forms[j] : m.al.per > 1 ? "attack " + (j + 1) : ""; }), name: function () { return m.names[m.A.id]; }, done: function (v, w) { resolveAttack(v, 2, w); } };
         const nd = CS.needs(c);
         if (nd.length && effSrc(c) === 2) return { key: [c.rd, c.ph, c.sg, c.rs, surMode].join(":"), max: 6, wants: nd.map(function (i) { return rollerFor(c, { side: i }); }), labels: nd.map(function (i) { return c.sd[i].n; }),
             name: function (id, j) { const i = nd[j], n = c.sd[i].m.filter(function (k) { const it = byId(c.ro[k]); return it && ownerOf(it) === id; })[0]; return n !== undefined ? nameOf(c.ro[n]) : null; }, done: function (v, w) { runStep(v, 2, w); } };
@@ -192,7 +208,7 @@ const CombatUI = (function () {
         }).join("") + "</div>";
         h += '<table class="grid cmtok"><tr><th>Token</th><th>Group</th></tr>' + (rows.length ? rows.map(function (r) { return "<tr><td>" + esc(nameOf(r[0])) + '</td><td><select ' + r[2] + ">" + opt(0, sdName(0), r[1]) + opt(1, sdName(1), r[1]) + opt(2, "Not fighting", r[1]) + "</select></td></tr>"; }).join("") : '<tr><td colspan="2" class="muted">No character tokens on this scene yet.</td></tr>') + "</table>";
         h += '<p class="hint">Not fighting: bystanders, captives, mounts left behind, hirelings out of it. They are left out of every roll and count.</p>';
-        h += '<div class="ctl"><label>Dice <select id="cm-rs">' + opt(0, "Roll in the sheet", st.rs) + opt(1, "Type a physical die result", st.rs) + opt(2, "Owlbear Dice tray", st.rs) + '</select></label><label>Surprise <select id="cm-sm">' + opt("roll", "Roll it now", surMode) + opt("earlier", "Already rolled", surMode) + opt("none", "No surprise", surMode) + "</select></label></div>";
+        h += '<label class="chk"><input type="checkbox" id="cm-dots"' + (dotsOn() ? " checked" : "") + "> Show acted dots on tokens (this browser)</label>"; h += '<div class="ctl"><label>Dice <select id="cm-rs">' + opt(0, "Roll in the sheet", st.rs) + opt(1, "Type a physical die result", st.rs) + opt(2, "Owlbear Dice tray", st.rs) + '</select></label><label>Surprise <select id="cm-sm">' + opt("roll", "Roll it now", surMode) + opt("earlier", "Already rolled", surMode) + opt("none", "No surprise", surMode) + "</select></label></div>";
         const nch = CS.changed(st);
         h += '<details class="cmrest" id="cm-rest"' + (rOpen ? " open" : "") + "><summary>Restrictions: " + (nch ? nch + " changed from RAW" : "all RAW") + '</summary><ul class="cmtog">' + CS.TOGGLES.map(function (t) {
             return '<li><label><input type="checkbox" data-tog="' + t.k + '"' + (CS.isOn(st, t.k) ? " checked" : "") + "> <b>" + esc(t.t) + "</b>" + inf(t.pg) + ' <span class="muted">' + esc(t.d) + "</span></label></li>"; }).join("") + "</ul></details>";
@@ -253,9 +269,13 @@ const CombatUI = (function () {
         } else if (a === "sheetinstead") { const nd = CS.needs(c); wait = null; runStep(nd.map(function () { return GMCombat.rnd(6); }), 0, []); }
         else if (a === "nosur") mutate(function (c, logs, sum, stack) { const before = CS.takeSnap(c, logs); CS.noSurprise(c, logs); CS.pushUndo(stack, before, logs, "No surprise"); });
         else if (a === "first") mutate(function (c, logs, sum, stack) { const before = CS.takeSnap(c, logs); CS.stepFirst(c, logs, Number(b.dataset.w)); CS.pushUndo(stack, before, logs, "Who goes first"); });
-        else if (a === "undo") { if (cur.undo.length) mutate(function (c, logs, sum, stack) { const r = CS.undo(c, logs, stack); removedExtra = r ? r.removed : []; }); }
-        else if (a === "atkroll") { const q = pendAtk(); if (!q) return; if (c.rs === 1) { const v = parseInt((gmRoot.querySelector("#cm-atk-in") || {}).value, 10); if (!(v >= 1 && v <= 20)) { msg = "Type the die result, 1 to 20."; render(); return; } resolveAttack(v, 1, []); } else resolveAttack(GMCombat.rnd(20), 0, []); }
-        else if (a === "atksheet") { wait = null; resolveAttack(GMCombat.rnd(20), 0, []); }
+        else if (a === "undo") { if (cur.undo.length) { let x = null; await mutate(function (c, logs, sum, stack) { const r = CS.undo(c, logs, stack); removedExtra = r ? r.removed : []; x = r && r.x; }); if (x && x.id) setCs(x.id, x.cs); } }
+        else if (a === "atkroll") {
+            const q = pendAtk(); if (!q) return; const m = atkModel(c, q), n = m ? m.al.per : 1;
+            if (c.rs === 1) { const v = Array.apply(null, Array(n)).map(function (x, j) { return parseInt((gmRoot.querySelector("#cm-atk-in-" + j) || {}).value, 10); }); if (!v.every(function (x) { return x >= 1 && x <= 20; })) { msg = "Type the die result, 1 to 20, for each attack."; render(); return; } resolveAttack(v, 1, []); }
+            else resolveAttack(Array.apply(null, Array(n)).map(function () { return GMCombat.rnd(20); }), 0, []);
+        }
+        else if (a === "atksheet") { wait = null; const q = pendAtk(), m = q && atkModel(c, q); resolveAttack(Array.apply(null, Array(m ? m.al.per : 1)).map(function () { return GMCombat.rnd(20); }), 0, []); }
         else if (a === "atkov") { atk.ov = true; render(); }
         else if (a === "atkno") dismissAttack();
         else if (a === "rangeauto") mutate(function (c) { const i = Number(b.dataset.i); delete c.sd[i].ov; CS.applyRanges(c, derived()); });
@@ -273,6 +293,7 @@ const CombatUI = (function () {
     function onChange(e) {
         const t = e.target, c = cur.c, i = Number(String(t.id).slice(-1));
         if (t.id === "cm-sm") { surMode = t.value; render(); return; }
+        if (t.id === "cm-dots") { try { localStorage.setItem("tk-dots", t.checked ? "1" : "0"); window.dispatchEvent(new StorageEvent("storage", { key: "tk-dots" })); } catch (e) { /* no storage */ } render(); return; }
         if (t.dataset.atk) { atk[t.dataset.atk] = t.dataset.atk === "wi" ? Number(t.value) : t.value; render(); return; }
         if (t.dataset.tok) { const o = {}; o[CS.PRE] = Object.assign({}, pre()); o[CS.PRE][t.dataset.tok] = Number(t.value); TK.OBR.scene.setMetadata(o).catch(function (e) { say(e.message, "ERROR"); }); return; }
         if (!c) {

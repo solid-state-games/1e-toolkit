@@ -8,3 +8,7 @@ window.TOOLKIT_DEV = dev === 'gm' || dev === 'player' ? dev : null;
 window.startToolkit();
 if (window.TOOLKIT_DEV && new URLSearchParams(location.search).get('view') !== 'banner' && new URLSearchParams(location.search).get('view') !== 'sheet') (await import('./banner_sync.js')).watchBanner(OBR, 'io.github.solid-state-games.1e-toolkit', new URL('index.html?view=banner&dev=' + dev, location.href).href); // dev: stands in for background.js
 if (window.TOOLKIT_DEV && !['banner', 'sheet'].includes(new URLSearchParams(location.search).get('view'))) (await import('./combat_menus.js')).installCombatMenus(OBR, 'io.github.solid-state-games.1e-toolkit', p => new URL(p, location.href).href); // dev: stands in for background.js
+if (window.TOOLKIT_DEV && !['banner', 'sheet'].includes(new URLSearchParams(location.search).get('view'))) {   // dev: stands in for background.js; a stub builder makes plain items
+    const stub = () => { const it = { type: 'SHAPE' }; const p = new Proxy({}, { get: (_, k) => k === 'build' ? () => it : v => { it[k] = v; return p; } }); return p; };
+    (await import('./combat_dots.js')).installCombatDots(OBR, 'io.github.solid-state-games.1e-toolkit', stub);
+}
