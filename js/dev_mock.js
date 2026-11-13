@@ -4,7 +4,7 @@
 // created, unless the dev room grants CHARACTER_UPDATE), the 16 kB metadata cap, items.onChange, modal open and close.
 const STORE = 'toolkit-dev-scene';
 const PLAYERS = [{ id: 'dev-gm', name: 'Dev GM', role: 'GM', color: '#a33' }, { id: 'dev-player', name: 'Dev Player', role: 'PLAYER', color: '#36a' }, { id: 'dev-player2', name: 'Other Player', role: 'PLAYER', color: '#693' }];
-const seed = () => ({ grant: false, items: [
+const seed = () => ({ grant: false, meta: {}, pm: {}, items: [
     { id: 't1', name: 'Aldric (your token)', layer: 'CHARACTER', type: 'IMAGE', createdUserId: 'dev-player', metadata: {} },
     { id: 't2', name: 'Brenna (other player)', layer: 'CHARACTER', type: 'IMAGE', createdUserId: 'dev-player2', metadata: {} },
     { id: 't3', name: 'Goblin NPC (GM token)', layer: 'CHARACTER', type: 'IMAGE', createdUserId: 'dev-gm', metadata: {} },
@@ -16,7 +16,9 @@ const bytes = o => new Blob([JSON.stringify(o)]).size;
 export default function makeMock(role) {
     const me = role === 'gm' ? PLAYERS[0] : PLAYERS[1];
     const listeners = new Set();
-    const fire = () => { const items = load().items; listeners.forEach(f => f(items)); };
+    const metaListeners = new Set(), pops = {};
+    const fireMeta = () => { const m = clone(load().meta || {}); metaListeners.forEach(f => f(m)); };
+    const fire = () => { const items = load().items; listeners.forEach(f => f(items)); fireMeta(); };
     window.addEventListener('storage', e => { if (e.key === STORE) fire(); });
     if (!localStorage.getItem(STORE)) save(seed());
     const clone = o => JSON.parse(JSON.stringify(o));
@@ -32,11 +34,21 @@ export default function makeMock(role) {
             id: me.id,
             getId: async () => me.id, getRole: async () => me.role, getName: async () => me.name, getColor: async () => me.color,
             hasPermission: async p => me.role === 'GM' || (p === 'CHARACTER_UPDATE' && !!load().grant),
-            getSelection: async () => [], getMetadata: async () => ({}), setMetadata: async () => {}, onChange: () => () => {}
+            getSelection: async () => [], getMetadata: async () => clone((load().pm || {})[me.id] || {}), setMetadata: async () => {}, onChange: () => () => {}
         },
-        party: { getPlayers: async () => PLAYERS.filter(p => p.id !== me.id).map(clone), onChange: () => () => {} },
+        party: { getPlayers: async () => PLAYERS.filter(p => p.id !== me.id).map(p => Object.assign(clone(p), { metadata: clone((load().pm || {})[p.id] || {}) })), onChange: () => () => {} },
         scene: {
             isReady: async () => true, onReadyChange: () => () => {},
+            getMetadata: async () => clone(load().meta || {}),
+            // like OBR: a patch; a key set to undefined is removed. Only the GM may write.
+            setMetadata: async patch => {
+                if (me.role !== 'GM') throw new Error('Permission denied: only the GM can change scene metadata');
+                const st = load(), meta = st.meta || {};
+                Object.keys(patch).forEach(k => { if (patch[k] === undefined) delete meta[k]; else meta[k] = clone(patch[k]); });
+                if (bytes(meta) > 16000) throw new Error('Metadata too large (16 kB limit)');
+                st.meta = meta; save(st); fire();
+            },
+            onMetadataChange: cb => { metaListeners.add(cb); return () => metaListeners.delete(cb); },
             items: {
                 getItems: async f => { const items = clone(load().items); if (Array.isArray(f)) return items.filter(i => f.indexOf(i.id) >= 0); return typeof f === 'function' ? items.filter(f) : items; },
                 updateItems: async (f, fn) => {
@@ -67,12 +79,21 @@ export default function makeMock(role) {
             },
             close: async () => { const t = window.top.document.getElementById('dev-modal'); if (t) t.remove(); }
         },
-        popover: { open: async () => {}, close: async () => {} },
+        popover: {
+            // a small fixed iframe, so a screenshot shows the banner; one per id
+            open: async o => {
+                if (pops[o.id]) pops[o.id].remove();
+                const f = document.createElement('iframe'); f.src = o.url; f.id = 'dev-pop'; f.style.cssText = 'position:fixed;top:6px;left:50%;transform:translateX(-50%);z-index:9998;border:1px solid #888;background:#fff;width:' + (o.width || 300) + 'px;height:' + (o.height || 100) + 'px';
+                document.body.appendChild(f); pops[o.id] = f;
+            },
+            close: async id => { if (pops[id]) { pops[id].remove(); delete pops[id]; } },
+            getWidth: async () => 300, getHeight: async () => 100
+        },
         contextMenu: { create: async () => {}, remove: async () => {} },
         action: { setHeight: async () => {}, setWidth: async () => {}, open: async () => {}, close: async () => {} },
         room: { getPermissions: async () => (load().grant ? ['CHARACTER_UPDATE'] : []), onPermissionsChange: () => () => {} },
         // dev only helpers used by the dev bar
         _dev: { toggleGrant() { const s = load(); s.grant = !s.grant; save(s); fire(); return s.grant; }, grant: () => !!load().grant,
-            reset() { save(seed()); fire(); }, addToken(name) { const s = load(); s.items.push({ id: 't' + Date.now(), name, layer: 'CHARACTER', type: 'IMAGE', createdUserId: me.id, metadata: {} }); save(s); fire(); } }
+            reset() { save(seed()); fire(); }, setTray(pid, values) { const s = load(); s.pm = s.pm || {}; s.pm[pid] = { 'rodeo.owlbear.dice/rollValues': values }; save(s); fire(); }, addToken(name) { const s = load(); s.items.push({ id: 't' + Date.now(), name, layer: 'CHARACTER', type: 'IMAGE', createdUserId: me.id, metadata: {} }); save(s); fire(); } }
     };
 }

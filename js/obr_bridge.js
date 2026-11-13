@@ -6,3 +6,4 @@ else OBR = (await import('../vendor/obr-sdk.js')).default;
 window.OBRX = OBR;
 window.TOOLKIT_DEV = dev === 'gm' || dev === 'player' ? dev : null;
 window.startToolkit();
+if (window.TOOLKIT_DEV && new URLSearchParams(location.search).get('view') !== 'banner' && new URLSearchParams(location.search).get('view') !== 'sheet') (await import('./banner_sync.js')).watchBanner(OBR, 'io.github.solid-state-games.1e-toolkit', new URL('index.html?view=banner&dev=' + dev, location.href).href); // dev: stands in for background.js

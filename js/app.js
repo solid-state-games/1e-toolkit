@@ -30,9 +30,10 @@ window.startToolkit = async function () {
     OBR.onReady(async function () {
         try {
             TK.role = await OBR.player.getRole(); TK.me = await OBR.player.getId(); TK.name = await OBR.player.getName();
-            document.body.classList.add(TK.role === "GM" ? "role-gm" : "role-player", TK.view === "sheet" ? "view-sheet" : "view-hub");
+            document.body.classList.add(TK.role === "GM" ? "role-gm" : "role-player", TK.view === "sheet" ? "view-sheet" : TK.view === "banner" ? "view-banner" : "view-hub");
             if (TK.dev) document.body.classList.add("dev");
-            if (TK.view === "sheet") await SheetUI.start(q.get("item"));
+            if (TK.view === "banner") await CombatUI.bannerStart();
+            else if (TK.view === "sheet") await SheetUI.start(q.get("item"));
             else await Hub.start();
         } catch (e) { console.error(e); $("app").innerHTML = '<div class="notice"><h2>Something went wrong</h2><p>' + esc(e.message) + "</p></div>"; }
     });
@@ -56,18 +57,19 @@ const Hub = (function () {
         TK.OBR.scene.onReadyChange(function (r) { if (r) refreshItems(); });
         TK.OBR.scene.items.onChange(function () { refreshItems(); });
         show(tab);
+        CombatUI.boot();
     }
     function shell() {
-        const tabs = [["sheets", "Characters"]].concat(TK.role === "GM" ? GM_TABS : []).concat([["guide", "Guide"]]);
+        const tabs = [["sheets", "Characters"]].concat(TK.role === "GM" ? GM_TABS : [["cbt", "Combat"]]).concat([["guide", "Guide"]]);
         let h = '<header class="hubhead"><h1>1e Character Sheet</h1><span><span class="rolebadge">' + (TK.role === "GM" ? "GM" : "Player") + '</span>' + tkGear("hub") + '</span></header>';
         h += '<nav class="tabs" role="tablist">' + tabs.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '">' + t[1] + "</button>"; }).join("") + "</nav>";
         h += '<section id="sheets" class="pane"></section>';
-        if (TK.role === "GM") h += '<section id="enc" class="pane"></section><section id="tre" class="pane"></section><section id="com" class="pane"></section>';
+        if (TK.role === "GM") h += '<section id="enc" class="pane"></section><section id="tre" class="pane"></section><section id="com" class="pane"></section>'; else h += '<section id="cbt" class="pane"></section>';
         h += '<section id="guide" class="pane"><p>The setup guide explains installing the extension, adding it to a room, linking a token to a sheet and moving a character between rooms.</p><p><a class="btn" href="guide.html" target="_blank" rel="noopener">Open the setup guide</a></p></section>';
         h += '<footer class="credit">' + esc(CREDIT) + "</footer>";
         $("app").innerHTML = h;
         document.querySelector(".tabs").addEventListener("click", function (e) { const b = e.target.closest("[data-tab]"); if (b) show(b.dataset.tab); });
-        if (TK.role === "GM") { Enc.init($("enc")); Tre.init($("tre")); Com.init($("com")); }
+        if (TK.role === "GM") { Enc.init($("enc")); Tre.init($("tre")); Com.init($("com")); CombatUI.initGm($("c-run")); } else CombatUI.initPlayer($("cbt"));
     }
     function show(t) {
         tab = t;
@@ -261,7 +263,7 @@ const Tre = (function () {
 
 /* ================= GM: Combat ================= */
 const Com = (function () {
-    let root, mode = "hit";
+    let root, mode = "run";
     const opts = function (list, sel) { return list.map(function (o) { return '<option value="' + o[0] + '"' + (String(o[0]) === String(sel) ? " selected" : "") + ">" + esc(o[1]) + "</option>"; }).join(""); };
     function num(id, d) { const e = $(id); const v = e ? parseInt(e.value, 10) : NaN; return isNaN(v) ? d : v; }
     function init(el) {
@@ -270,8 +272,8 @@ const Com = (function () {
         const weapons = WEAPONS.map(function (w, i) { return [i, w.name + " (" + w.kind + ")"]; });
         const armours = ARMORS.map(function (a, i) { return [i, a.name + (a.ac !== null ? " (AC " + a.ac + ")" : "")]; });
         const sits = SITUATIONS.map(function (s, i) { return [i, s.l]; });
-        el.innerHTML = '<nav class="subtabs"><button type="button" data-m="hit" class="on">To hit</button><button type="button" data-m="P">Pummel</button><button type="button" data-m="G">Grapple</button><button type="button" data-m="O">Overbear</button></nav>' +
-            '<div id="c-hit"><div class="ctl">' +
+        el.innerHTML = '<nav class="subtabs"><button type="button" data-m="run" class="on">Encounter</button><button type="button" data-m="hit">To hit</button><button type="button" data-m="P">Pummel</button><button type="button" data-m="G">Grapple</button><button type="button" data-m="O">Overbear</button></nav>' +
+            '<div id="c-run"></div><div id="c-hit" style="display:none"><div class="ctl">' +
             '<label>Class <select id="c-cls">' + opts(classes, "fighter") + '</select></label><label>Level <select id="c-lvl"></select></label>' +
             '<label>Target AC <input type="number" id="c-ac" min="-10" max="10" value="5"></label>' +
             '<label>Weapon <select id="c-wep">' + opts(weapons, 0) + '</select></label>' +
@@ -285,8 +287,8 @@ const Com = (function () {
         el.querySelector(".subtabs").addEventListener("click", function (e) {
             const b = e.target.closest("[data-m]"); if (!b) return; mode = b.dataset.m;
             el.querySelectorAll(".subtabs button").forEach(function (x) { x.classList.toggle("on", x === b); });
-            $("c-hit").style.display = mode === "hit" ? "" : "none"; $("c-wl").style.display = mode === "hit" ? "none" : "";
-            if (mode !== "hit") buildWl();
+            $("c-run").style.display = mode === "run" ? "" : "none"; $("c-hit").style.display = mode === "hit" ? "" : "none"; $("c-wl").style.display = mode === "P" || mode === "G" || mode === "O" ? "" : "none";
+            if (mode === "P" || mode === "G" || mode === "O") buildWl();
         });
         $("c-cls").onchange = function () { fillLevels(); calc(); };
         el.querySelectorAll("#c-hit select, #c-hit input").forEach(function (x) { if (x.id !== "c-cls") x.onchange = calc; x.oninput = calc; });

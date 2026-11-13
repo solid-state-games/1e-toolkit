@@ -1,12 +1,14 @@
 // background.js - runs once per room (manifest background_url). Adds "Open 1e sheet" to the right-click menu of character-layer tokens.
-// Docs used: manifest (background_url), context menu (create, filter, onClick), modal (open), notification (show), player (getId, getRole), scene items (getItems).
+// Docs used: manifest (background_url), context menu (create, filter, onClick), modal (open), notification (show), player (getId, getRole), scene items (getItems), scene metadata, popover (see banner_sync.js).
 import OBR from "../vendor/obr-sdk.js";
+import { watchBanner } from "./banner_sync.js";
 
 const NS = "io.github.solid-state-games.1e-toolkit"; // keep equal to SheetRules.NS (test/toolkit.test.js checks this)
 const OWNER_KEY = NS + "/owner";
 const here = p => new URL(p, location.href).href;
 
 OBR.onReady(() => {
+    watchBanner(OBR, NS, here("index.html?view=banner")); // combat phase banner for everyone, also players who join after combat starts
     OBR.contextMenu.create({
         id: NS + "/open-sheet",
         icons: [{ icon: here("icon.svg"), label: "Open 1e sheet", filter: { min: 1, max: 1, every: [{ key: "layer", value: "CHARACTER" }] } }],

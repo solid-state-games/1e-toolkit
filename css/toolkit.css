@@ -206,3 +206,16 @@ table.acbuild{min-width:60%}table.acbuild td:nth-child(2),table.acbuild th:nth-c
 table.acbuild tr.tot th{background:var(--inv-bg);color:var(--inv-fg);font-size:13px}
 .acskip{margin:.3em 0;padding-left:1.2em;font-size:12.5px;color:var(--muted)}.acskip li{margin:.1em 0}.acskip b{color:var(--fg);font-style:italic}
 .mkbar label.chk{border:1px solid var(--line);padding:.15em .5em;cursor:pointer}.mkbar label.chk input{width:1.1em;height:1.1em;accent-color:var(--fg)}
+
+/* ---------- combat mode: banner, roll window, GM screen ---------- */
+.cmban{border:2px solid var(--line);padding:.25em .7em;display:flex;flex-direction:column;background:var(--bg)}
+.cmban b{font-size:12px;text-transform:uppercase;letter-spacing:.1em;font-weight:600}.cmban span{font-size:17px;font-weight:600;line-height:1.2}
+.view-banner #app{min-height:0;position:relative}.view-banner .cmban{border-width:0;height:74px;justify-content:center}
+.bnhide{position:absolute;top:2px;right:4px}
+.cmtop{display:flex;gap:.6em;align-items:stretch;justify-content:space-between;flex-wrap:wrap;margin:.4em 0}.cmtop .cmban{flex:1;min-width:200px}.cmbtns{display:flex;flex-direction:column;gap:.3em;justify-content:center}
+.cmnum{width:3.2em;text-align:center}
+.rollwin{border:1px solid var(--line);margin:.6em 0;padding:.2em .6em .4em}.rollwin h4{font-size:12px;border-bottom:1px solid var(--line);margin:0 0 .2em}
+.rollwin ol{margin:.2em 0;padding-left:1.4em;font-size:13px}.rollwin li i{font-style:normal;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+.cmside{display:flex;gap:.6em;align-items:flex-start;border-top:1px solid var(--hl);padding:.3em 0}.cmside>input{width:9em;font-weight:600}
+.cmtog{list-style:none;padding:0;margin:.2em 0}.cmtog li{border-top:1px solid var(--hl);padding:.15em 0;font-size:13px}
+.view-hub #cbt .cmban{margin-bottom:.4em}
