@@ -6,7 +6,7 @@
 const path = require('path'), fs = require('fs'), { connect } = require('./cdp.js');
 const BASE = process.argv[2] || 'http://127.0.0.1:8770', PORT = Number(process.argv[3] || 9331), OUT = path.join(__dirname, '..', 'REVIEW');
 fs.mkdirSync(OUT, { recursive: true });
-const shotBoth = async (pg, name, o) => { for (const t of ['light', 'dark']) { await pg.ev('document.documentElement.dataset.theme="' + t + '"'); await pg.shot(path.join(OUT, 'combat-3-' + name + '-' + t + '.png'), o); } await pg.ev('document.documentElement.removeAttribute("data-theme")'); };
+const shotBoth = async (pg, name, o, prefix) => { for (const t of ['light', 'dark']) { await pg.ev('document.documentElement.dataset.theme="' + t + '"'); await pg.shot(path.join(OUT, (prefix || 'combat-3-') + name + '-' + t + '.png'), o); } await pg.ev('document.documentElement.removeAttribute("data-theme")'); };
 let fails = 0, total = 0; const check = (n, ok, d) => { total++; if (!ok) fails++; console.log((ok ? 'PASS ' : 'FAIL ') + n + (d ? '  (' + d + ')' : '')); };
 const ignorable = e => /fonts\.g(oogleapis|static)\.com|ERR_NAME_NOT_RESOLVED|ERR_INTERNET_DISCONNECTED|ERR_CONNECTION/.test(e);
 const pages = [];
@@ -375,11 +375,79 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
         await g.click('[data-act="end"]'); await g.sleep(400);
         await g.click('[data-tab="sheets"]');
     }
+    {   // ---------- combat 4: right-click sides, undo that survives a reload, attacks by drag ----------
+        await g.ev('(function(){var s=JSON.parse(localStorage.getItem("toolkit-dev-scene"));s.meta={};s.pm={};localStorage.setItem("toolkit-dev-scene",JSON.stringify(s))})()');
+        await g.ev('window.OBRX.scene.items.updateItems(["t3"],function(d){d[0].name="Goblin 3"})'); await g.sleep(300);
+        await g.click('[data-tab="com"]'); await g.click('[data-top="run"]'); await g.sleep(300);
+        const labels = await g.ev('JSON.stringify(window.OBRX._dev.ctxLabels().map(function(x){return x.label}))');
+        check('right-click: the GM gets one menu item per side (current names) plus Not fighting, and Attack...', JSON.parse(labels).slice().sort().join('|') === 'Attack...|Combat: Foes|Combat: Not fighting|Combat: Party', labels);
+        await g.ev('window.OBRX._dev.ctxClick("io.github.solid-state-games.1e-toolkit/side-1", ["t1","t2"])'); await g.sleep(400);
+        check('right-click before combat: the choice shows in the set-up table (two tokens moved to Foes at once)', await g.ev('Array.from(document.querySelectorAll("#c-run [data-tok]")).map(function(s){return s.value}).join("")') === '111');
+        await g.ev('(function(){var d=document.createElement("div");d.id="devctx";d.style.cssText="position:fixed;left:40px;top:300px;background:#fff;color:#000;border:1px solid #000;padding:4px;z-index:99999;font:13px Jost,sans-serif";d.innerHTML=window.OBRX._dev.ctxLabels().map(function(x){return "<div style=\\"padding:3px 10px\\">"+x.label+"</div>"}).join("");document.body.appendChild(d)})()');
+        await shotBoth(g, 'right-click-sides', { full: true }, 'combat-4-'); await g.ev('document.getElementById("devctx").remove()');
+        await g.ev('window.OBRX._dev.ctxClick("io.github.solid-state-games.1e-toolkit/side-0", ["t1","t2"])'); await g.sleep(300);
+        await g.set('#cm-rs', '1'); await g.set('#cm-sm', 'none'); await g.click('[data-act="start"]'); await g.sleep(600);
+        const gs = () => g.ev('JSON.stringify(CombatUI._state().c)').then(JSON.parse);
+        let cs = await gs();
+        await g.ev('window.OBRX._dev.addToken("Orc 1")'); await g.sleep(400);
+        const orc = await g.ev('window.OBRX.scene.items.getItems().then(function(a){return a.filter(function(i){return i.name==="Orc 1"})[0].id})');
+        await g.ev('window.OBRX._dev.ctxClick("io.github.solid-state-games.1e-toolkit/side-1", ["' + orc + '"])'); await g.sleep(500);
+        cs = await gs();
+        check('right-click in combat: a token not yet in the roster is added to the chosen side; Not fighting takes it out of the sides', cs.ro.length === 4 && cs.sd[1].m.indexOf(3) >= 0 && (await (async () => { await g.ev('window.OBRX._dev.ctxClick("io.github.solid-state-games.1e-toolkit/side-2", ["' + orc + '"])'); await g.sleep(400); const c2 = await gs(); return c2.nf.indexOf(3) >= 0 && c2.sd[1].m.indexOf(3) < 0; })()));
+        // initiative typed: Party 6, Goblins 2, so Party acts
+        await g.ev('document.getElementById("cm-in-0").value=6;document.getElementById("cm-in-1").value=2'); await g.click('[data-act="primary"]'); await g.sleep(500);
+        check('combat: Party has initiative and acts first', (await gs()).ph === 2 && (await gs()).w === 0);
+        // attacks: a player drags from their own token to the Goblin; refused from someone else's token; GM sees the card
+        const ap = await open('dev=player', 560, 700); await ap.click('[data-tab="cbt"]'); await ap.sleep(600);
+        await ap.ev('window.OBRX._dev.drag("t3","t1")'); await ap.sleep(500);
+        check('attack: a player cannot start an attack from a token that is not theirs (no request is written)', await g.ev('!document.querySelector("#c-run .cmatk")'));
+        await ap.ev('window.OBRX._dev.drag("t1","t3")'); await g.sleep(900);
+        const card = await g.ev('document.querySelector("#c-run .cmatk")?document.querySelector("#c-run .cmatk").innerText:""');
+        check('attack: dragging from Aldric to Goblin 3 makes the GM card appear with who asked, the weapon, target AC from the MM (Goblin AC 6) and the number needed', /Aldric/.test(card) && /Goblin 3/.test(card) && /asked by Dev Player/.test(card) && /Needs \d+ or more on a d20/.test(card) && await g.ev('document.querySelector("[data-atk=ac]").value') === '6', card.replace(/\s+/g, ' '));
+        await shotBoth(g, 'attack-gm-card', { full: true }, 'combat-4-');
+        await g.ev('document.getElementById("cm-atk-in").value=14'); await g.click('[data-act="atkroll"]'); await g.sleep(600);
+        await g.ev('document.getElementById("cm-log").open=true'); await g.sleep(200);
+        const rw = await g.ev('document.querySelector("#c-run .rollwin").innerText');
+        check('attack: the d20 is entered, the result is logged as kind 2 and shown as "Aldric ... attacks Goblin 3: rolled 14, needs N: hit or miss" with no damage', /attacks Goblin 3: rolled 14, needs -?\d+: (hit|miss)/.test(rw) && (await g.ev('CombatUI._state().logs[1].filter(function(e){return e[1]===2}).length')) === 1 && !(await g.ev('!!document.querySelector("#c-run .cmatk")')), rw.replace(/\s+/g, ' '));
+        await ap.sleep(500);
+        check('attack: the player sees the same line in the roll window', /attacks Goblin 3: rolled 14/.test(await ap.ev('document.getElementById("cbt").innerText')));
+        await shotBoth(ap, 'attack-player', { full: true }, 'combat-4-');
+        // checks and override: the Goblins do not act now
+        await g.ev('window.OBRX._dev.drag("t3","t1")'); await g.sleep(700);
+        const pc = await g.ev('document.querySelector("#c-run .cmatk")?document.querySelector("#c-run .cmatk").innerText:""');
+        check('attack: a GM attack from a side that does not act now shows the reason and an Override button; Dismiss clears it', /does not act now/.test(pc) && /Override and attack/i.test(pc));
+        await g.click('[data-act="atkno"]'); await g.sleep(500);
+        check('attack: dismissed, the card is gone and nothing was logged', await g.ev('!document.querySelector("#c-run .cmatk")') && (await g.ev('CombatUI._state().logs[1].filter(function(e){return e[1]===2}).length')) === 1);
+        // tray: waiting line names the owner of the attacker, the d20 comes from them
+        await g.click('[data-act="cog"]'); await g.set('#cm-rs', '2'); await g.sleep(300); await g.click('[data-act="cog"]'); await g.sleep(300);
+        await ap.ev('window.OBRX._dev.drag("t1","t3")'); await g.sleep(1200);
+        const tw = await g.ev('document.querySelector("#c-run .cmatk").innerText');
+        check('attack: with the Dice tray the card waits for the attacker\'s owner (Aldric\'s player), not the GM', /Waiting for Aldric \(your token\) to roll a d20 in the Dice tray/.test(tw), tw.replace(/\s+/g, ' '));
+        await g.ev('window.OBRX._dev.setTray("dev-gm", [20])'); await g.sleep(1800);
+        check('attack: a d20 from the GM\'s tray is ignored for a player\'s attacker', await g.ev('!!document.querySelector("#c-run .cmatk")'));
+        await g.ev('window.OBRX._dev.setTray("dev-player", [17])'); await g.sleep(2200);
+        check('attack: the owner\'s tray d20 (17) resolves it and the log says who rolled it', /rolled 17/.test(await g.ev('document.querySelector("#c-run .rollwin").innerText')) && !(await g.ev('!!document.querySelector("#c-run .cmatk")')), await g.ev('JSON.stringify([document.querySelector("#c-run .cmatk")&&document.querySelector("#c-run .cmatk").innerText,CombatUI._wait()&&CombatUI._wait().vals,JSON.stringify(CombatUI._state().logs[1].slice(-2))])'));
+        // undo survives a reload and walks back
+        await g.nav(BASE + '/index.html?dev=gm'); await g.sleep(900); await g.click('[data-tab="com"]'); await g.sleep(500);
+        const n0 = await g.ev('CombatUI._state().undo.length');
+        check('undo: the stack is in the scene, so after a reload the Undo button is live with several steps', n0 >= 3 && await g.ev('!document.querySelector("[data-act=undo]").disabled'), String(n0));
+        await g.click('[data-act="undo"]'); await g.sleep(400); await g.click('[data-act="undo"]'); await g.sleep(400);
+        cs = await gs();
+        check('undo: pressing it twice takes the two attacks back out of the log (the log entries go, kind 9 lines record the undo)', (await g.ev('CombatUI._state().logs[1].filter(function(e){return e[1]===2}).length')) === 0 && (await g.ev('CombatUI._state().logs[1].filter(function(e){return e[1]===9}).length')) === 2);
+        await shotBoth(g, 'undo-walking-back', { full: true }, 'combat-4-');
+        await g.click('[data-act="undo"]'); await g.sleep(400); cs = await gs();
+        check('undo: a third press takes the initiative roll back (round 1, initiative unrolled) and the stack shrinks by three', cs.rd === 1 && cs.ph === 1 && cs.w === -1 && (await g.ev('CombatUI._state().undo.length')) === n0 - 3, JSON.stringify([cs.rd, cs.ph, cs.w]));
+        await g.ev('window.confirm=function(){return true};window.__dl=null;var oc=URL.createObjectURL;URL.createObjectURL=function(b){window.__dl=b;return oc.call(URL,b)}');
+        await g.click('[data-act="end"]'); await g.sleep(500);
+        check('combat 4: End combat clears the undo stack and the side choices too', await g.ev('JSON.stringify(Object.keys(JSON.parse(localStorage.getItem("toolkit-dev-scene")).meta))') === '[]');
+        await g.click('[data-tab="sheets"]');
+    }
     {   // the action popover follows its content height
-        await g.click('[data-tab="guide"]'); await g.sleep(400); const hg = await g.ev('window.__actionHeight');
-        await g.click('[data-tab="com"]'); await g.sleep(400); const hc = await g.ev('window.__actionHeight');
-        check('popover height follows the content: the short Guide tab asks for a smaller height than the Combat tab, both within 200 to 760', hg >= 200 && hg <= 760 && hc <= 760 && hg < hc, hg + ' vs ' + hc);
-        await g.ev('window.__vh=420;window.dispatchEvent(new Event("resize"))'); await g.sleep(500); const hv = await g.ev('window.__actionHeight');
+        await g.send('Page.bringToFront');   // a background tab does not deliver ResizeObserver callbacks
+        await g.click('[data-tab="guide"]'); await g.sleep(1000); const hg = await g.ev('window.__actionHeight');
+        await g.click('[data-tab="com"]'); await g.sleep(1000); const hc = await g.ev('window.__actionHeight');
+        check('popover height follows the content: the short Guide tab asks for a smaller height than the Combat tab, both within 200 to 760', hg >= 200 && hg <= 760 && hc <= 760 && hg < hc, hg + ' vs ' + hc + ' ' + await g.ev('JSON.stringify(Array.from(document.getElementById("app").children).map(function(e){return [e.id||e.className,Math.round(e.getBoundingClientRect().height),getComputedStyle(e).display]}))'));
+        await g.ev('window.__vh=420;window.dispatchEvent(new Event("resize"))'); await g.sleep(900); const hv = await g.ev('window.__actionHeight');
         check('popover height never goes past the bottom of the screen: a 420 px viewport caps it at 316 (viewport less 104)', hv <= 316 && hv >= 200, String(hv));
         await g.ev('window.__vh=900;window.dispatchEvent(new Event("resize"))'); await g.sleep(400);
         await g.click('[data-tab="sheets"]');
