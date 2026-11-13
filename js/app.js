@@ -263,7 +263,7 @@ const Tre = (function () {
 
 /* ================= GM: Combat ================= */
 const Com = (function () {
-    let root, mode = "run";
+    let root, mode = "hit";
     const opts = function (list, sel) { return list.map(function (o) { return '<option value="' + o[0] + '"' + (String(o[0]) === String(sel) ? " selected" : "") + ">" + esc(o[1]) + "</option>"; }).join(""); };
     function num(id, d) { const e = $(id); const v = e ? parseInt(e.value, 10) : NaN; return isNaN(v) ? d : v; }
     function init(el) {
@@ -272,8 +272,8 @@ const Com = (function () {
         const weapons = WEAPONS.map(function (w, i) { return [i, w.name + " (" + w.kind + ")"]; });
         const armours = ARMORS.map(function (a, i) { return [i, a.name + (a.ac !== null ? " (AC " + a.ac + ")" : "")]; });
         const sits = SITUATIONS.map(function (s, i) { return [i, s.l]; });
-        el.innerHTML = '<nav class="subtabs"><button type="button" data-m="run" class="on">Encounter</button><button type="button" data-m="hit">To hit</button><button type="button" data-m="P">Pummel</button><button type="button" data-m="G">Grapple</button><button type="button" data-m="O">Overbear</button></nav>' +
-            '<div id="c-run"></div><div id="c-hit" style="display:none"><div class="ctl">' +
+        el.innerHTML = '<nav class="subtabs" id="c-top"><button type="button" data-top="run" class="on">Combat</button><button type="button" data-top="tools">Tools</button></nav><div id="c-run"></div><div id="c-tools" style="display:none"><nav class="subtabs" id="c-sub"><button type="button" data-m="hit" class="on">To hit</button><button type="button" data-m="P">Pummel</button><button type="button" data-m="G">Grapple</button><button type="button" data-m="O">Overbear</button></nav>' +
+            '<div id="c-hit"><div class="ctl">' +
             '<label>Class <select id="c-cls">' + opts(classes, "fighter") + '</select></label><label>Level <select id="c-lvl"></select></label>' +
             '<label>Target AC <input type="number" id="c-ac" min="-10" max="10" value="5"></label>' +
             '<label>Weapon <select id="c-wep">' + opts(weapons, 0) + '</select></label>' +
@@ -283,11 +283,16 @@ const Com = (function () {
             '<label>Range (missile) <select id="c-rng"><option value="S">Short</option><option value="M">Medium (-2)</option><option value="L">Long (-5)</option></select></label>' +
             '<label>Target size <select id="c-size"><option value="SM">Small or medium</option><option value="L">Large</option></select></label><label>Damage bonus <input type="number" id="c-dmg" value="0"></label>' +
             '</div><div id="c-res" class="out"></div></div>' +
-            '<div id="c-wl" style="display:none"><div class="ctl" id="c-wlf"></div><div class="row"><button type="button" class="btn" id="c-roll">Roll</button></div><div id="c-wres" class="out"></div></div>';
-        el.querySelector(".subtabs").addEventListener("click", function (e) {
+            '<div id="c-wl" style="display:none"><div class="ctl" id="c-wlf"></div><div class="row"><button type="button" class="btn" id="c-roll">Roll</button></div><div id="c-wres" class="out"></div></div></div>';
+        $("c-top").addEventListener("click", function (e) {
+            const b = e.target.closest("[data-top]"); if (!b) return;
+            $("c-top").querySelectorAll("button").forEach(function (x) { x.classList.toggle("on", x === b); });
+            $("c-run").style.display = b.dataset.top === "run" ? "" : "none"; $("c-tools").style.display = b.dataset.top === "tools" ? "" : "none";
+        });
+        $("c-sub").addEventListener("click", function (e) {
             const b = e.target.closest("[data-m]"); if (!b) return; mode = b.dataset.m;
-            el.querySelectorAll(".subtabs button").forEach(function (x) { x.classList.toggle("on", x === b); });
-            $("c-run").style.display = mode === "run" ? "" : "none"; $("c-hit").style.display = mode === "hit" ? "" : "none"; $("c-wl").style.display = mode === "P" || mode === "G" || mode === "O" ? "" : "none";
+            $("c-sub").querySelectorAll("button").forEach(function (x) { x.classList.toggle("on", x === b); });
+            $("c-hit").style.display = mode === "hit" ? "" : "none"; $("c-wl").style.display = mode === "P" || mode === "G" || mode === "O" ? "" : "none";
             if (mode === "P" || mode === "G" || mode === "O") buildWl();
         });
         $("c-cls").onchange = function () { fillLevels(); calc(); };
