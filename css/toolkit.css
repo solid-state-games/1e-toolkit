@@ -296,3 +296,4 @@ button.gear,button.btn.ghost.gear,.cmcard .ibtn{border:0;background:none;box-sha
 .cmhits{display:flex;gap:var(--s4);flex-wrap:wrap}.cmhit{display:flex;align-items:center;gap:var(--s2)}.cmcount{display:inline-block;min-width:1.6em;text-align:center;font-size:20px;font-weight:600}
 .cmhp tr.dead td{color:var(--muted);text-decoration:line-through}.cmhp tr.dead td:nth-child(3){text-decoration:none;font-style:italic;font-weight:600}.cmhpin{width:11em}
 .cmspell{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;padding:var(--s1) 0;border-top:var(--hair) solid var(--hl)}.cmspn{width:8em}.chip{border:var(--hair) solid var(--line);padding:0 var(--s1);font-size:12px}
+.cmcard .btn{white-space:nowrap}.cmhead{flex-wrap:wrap}

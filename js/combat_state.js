@@ -110,12 +110,17 @@ const CombatState = (function () {
         return [n, Math.max(cur[1], n)];
     }
     const isDead = function (h) { return !!h && h[0] <= 0; };   // 0 or less is dead (TB's table, PHB p.105)
-    // hit dice "3+3", "1-1", "4": n d8 and the modifier, at least 1 hit point (MM; a half die and the like count as one d8)
+    // MM hit dice: "3+3" and "1-1" are n d8 and the modifier; "1-7 hit points" is a number from 1 to 7; "100 hit points" and "16 (128 hit points)" are that many;
+    // a half or quarter die is the d8 scaled; "8, 12 or 16" takes the first number. At least 1 hit point; null when there is no number (the GM types the maximum).
     function rollHd(hd, rng) {
-        rng = rng || Math.random; const m = /^(\d+)([+-]\d+)?/.exec(String(hd)); if (!m) return null;
-        let n = Number(m[1]), mod = m[2] ? Number(m[2]) : 0, t = mod; if (n < 1) n = 1;
-        for (let i = 0; i < n; i++) t += 1 + Math.floor(rng() * 8);
-        t = Math.max(1, t); return [t, t];
+        rng = rng || Math.random; const t = String(hd);
+        let m = /\((\d+) hit points?\)/i.exec(t) || /^(\d+) hit points?/i.exec(t); if (m) return [Number(m[1]), Number(m[1])];
+        m = /^(\d+)-(\d+) hit points?/i.exec(t); if (m) { const a = Number(m[1]), b = Number(m[2]), v = a + Math.floor(rng() * (b - a + 1)); return [Math.max(1, v), Math.max(1, v)]; }
+        if (t.charAt(0) === "\u00bd" || t.charAt(0) === "\u00bc") { const v = Math.max(1, Math.round((1 + Math.floor(rng() * 8)) * (t.charAt(0) === "\u00bd" ? 0.5 : 0.25))); return [v, v]; }
+        m = /^(\d+)([+-]\d+)?/.exec(t); if (!m) return null;
+        let n = Number(m[1]), v = m[2] ? Number(m[2]) : 0; if (n < 1) n = 1;
+        for (let k = 0; k < n; k++) v += 1 + Math.floor(rng() * 8);
+        v = Math.max(1, v); return [v, v];
     }
     // side casualties: Goblins down: 1 of 3 (33%), with the DMG p.67 morale reminders
     function casualties(c, isDownIdx) {

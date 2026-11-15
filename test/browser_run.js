@@ -18,7 +18,7 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
     // ---------- player hub: no GM tabs ----------
     let p = await open('dev=player', 560, 780);
     const tabsP = await p.ev('Array.from(document.querySelectorAll(".tabs button")).map(b=>b.textContent).join("|")');
-    check('player hub shows only Characters, Combat (roll window) and Guide', tabsP === 'Characters|Combat|Guide', tabsP);
+    check('player hub shows only Characters and Guide (combat is the GM\'s)', tabsP === 'Characters|Guide', tabsP);
     check('player hub has no GM panes in the DOM', await p.ev('!document.getElementById("enc")&&!document.getElementById("tre")&&!document.getElementById("com")'));
     check('player sees only own token (Aldric)', await p.ev('document.querySelectorAll(".charlist li").length') === 1);
     await p.shot(path.join(OUT, 'hub-player.png'));
@@ -302,225 +302,91 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
     await g.click('.subtabs [data-m="hit"]'); await g.sleep(100); await shotBoth(g, 'gm-tools', { full: true });
     await g.shot(path.join(OUT, 'hub-gm-combat.png'), { full: true });
 
-    // ---------- combat mode (rework): set-up behind the cog, one card, one button per step, tray waits, Not fighting, undo ----------
+    // ---------- simple combat (2026-11-16): set-up, round bar, surprise words, pairs both ways, hits and morale flag, GM-only hit points and number labels, spells, turns ----------
     {
-        await g.ev('(function(){var s=JSON.parse(localStorage.getItem("toolkit-dev-scene"));s.meta={};s.pm={};localStorage.setItem("toolkit-dev-scene",JSON.stringify(s))})()');
-        await g.click('[data-top="run"]'); await g.sleep(300);
-        const pp = await open('dev=player', 560, 700); await pp.click('[data-tab="cbt"]'); await pp.sleep(200);
-        check('combat: before it starts a player sees "No combat is running" and no banner', /No combat is running/.test(await pp.ev('document.getElementById("cbt").innerText')) && await pp.ev('!document.getElementById("dev-pop")'));
-        check('combat: with no combat the set-up panel is open with Start combat at the bottom; the calculators are in Tools', await g.ev('!!document.querySelector("#c-run .cmsetup")&&!!document.querySelector("#c-run [data-act=start]")') && /Combat\|Tools/.test(await g.ev('Array.from(document.querySelectorAll("#c-top button")).map(function(b){return b.textContent}).join("|")')));
-        const sides = await g.ev('Array.from(document.querySelectorAll("#c-run [data-tok]")).map(function(s){return s.value}).join("")');
-        check('combat: players\' tokens default to the first side, the GM\'s goblin to the second; three groups on offer (Party, Foes, Not fighting)', sides === '001' && await g.ev('document.querySelector("#c-run [data-tok]").options.length') === 3, sides);
-        check('combat: surprise ranges show who set them (1-2: usual), no page numbers in the body text (they are in info icons)', /1-2: usual/.test(await g.ev('document.querySelector(".cmsetup").innerText')) && await g.ev('document.querySelectorAll(".cmsetup .inf[title]").length') >= 3 && !/\b(DMG|PHB|MM) p\./.test(await g.ev('document.getElementById("c-run").innerText')));
-        check('combat: Restrictions are folded with a one-line summary', /Restrictions: all RAW/i.test(await g.ev('document.querySelector("#cm-rest summary").innerText')) && await g.ev('!document.getElementById("cm-rest").open'));
-        await g.click('[data-et="0"]'); await g.sleep(200);
-        check('combat: ticking "elves/halflings alone or ahead" for an elf party makes the foes surprised on 1-4 (PHB p.16); unticking restores 1-2', await g.ev('document.getElementById("cm-r1").value') === '4' || await g.ev('document.getElementById("cm-r1").value') === '2');
-        await g.click('[data-et="0"]'); await g.sleep(200);
-        await g.set('#cm-n1', 'Goblins'); await g.set('#cm-rs', '1');
-        await g.set('[data-tok="t2"]', '2'); await g.sleep(200);
-        await shotBoth(g, 'gm-setup', { full: true });
-        await g.click('[data-act="start"]'); await g.sleep(500);
+        const NSK = 'io.github.solid-state-games.1e-toolkit';
+        await g.send('Page.bringToFront');
+        // an earlier build's scene keys are cleaned on load; its combat keeps sides, roster and round
+        await g.ev('(function(){var s=JSON.parse(localStorage.getItem("toolkit-dev-scene"));s.pm={};s.meta={};s.meta["' + NSK + '/undo"]=[{l:"x"}];s.meta["' + NSK + '/log/1"]=[[0]];s.meta["' + NSK + '/log/s"]=[[1]];s.meta["' + NSK + '/combat"]={v:1,on:1,rd:4,ph:2,sg:0,op:0,rs:0,w:0,ro:["t1","t3"],nf:[],sd:[{n:"Heroes",ra:2,sr:0,sl:0,in:0,m:[0]},{n:"Orcs",ra:2,sr:0,sl:0,in:0,m:[1]}]};localStorage.setItem("toolkit-dev-scene",JSON.stringify(s))})()');
+        await g.nav(BASE + '/index.html?dev=gm'); await g.sleep(1500);
+        const keys = () => g.ev('JSON.stringify(Object.keys(JSON.parse(localStorage.getItem("toolkit-dev-scene")).meta).sort())').then(JSON.parse);
+        let ks = await keys(); const mig = await g.ev('JSON.stringify(JSON.parse(localStorage.getItem("toolkit-dev-scene")).meta["' + NSK + '/combat"])').then(JSON.parse);
+        check('combat 6: scene keys an earlier build left (undo, log/<round>) are deleted on load; its combat is kept in the new shape (sides, roster, round)', ks.join() === NSK + '/combat' && mig.v === 2 && mig.rd === 4 && mig.sd[0].n === 'Heroes' && mig.ro.join() === 't1,t3' && !('ph' in mig), JSON.stringify(ks));
+        await g.click('[data-tab="com"]'); await g.sleep(300); await g.ev('window.confirm=function(){return true}'); await g.click('[data-act="end"]'); await g.sleep(500);
+        ks = await keys(); check('combat 6: End combat clears the combat key', ks.length === 0, JSON.stringify(ks));
+        // tokens: Aldric (sheet), Brenna with a fighter sheet, three goblins by name (MM exact name, trailing number ignored)
+        await g.ev('window.OBRX.scene.items.updateItems(["t3"],function(d){d[0].name="Goblin 1"});window.OBRX.scene.items.updateItems(["t2"],function(d){var s=SheetRules.blank();Object.assign(s,{nm:"Brenna",race:"Human",cl:["Fighter"],lv:[7],sc:[16,10,10,14,15,12],pf:["Sword, Long & scabbard","Bow, long"],inv:[["Chain",1]]});d[0].metadata["' + NSK + '/sheet"]=s});window.OBRX._dev.addToken("Goblin 2");window.OBRX._dev.addToken("Goblin 3")'); await g.sleep(600);
+        const pp = await open('dev=player', 560, 700); await pp.sleep(500);
+        check('combat 6: players see nothing of combat: no Combat tab, no combat pane, no number labels or banner', await pp.ev('Array.from(document.querySelectorAll(".tabs button")).map(function(b){return b.textContent}).join("|")') === 'Characters|Guide' && await pp.ev('!document.getElementById("com")&&!document.getElementById("cbt")&&!document.getElementById("dev-map")&&!document.getElementById("dev-pop")'));
+        await g.click('[data-tab="com"]'); await g.click('[data-top="run"]'); await g.sleep(300);
+        check('combat 6: before Start the set-up panel is open (sides, surprise ranges, token groups) with no dice, restrictions or surprise-mode controls', await g.ev('!!document.querySelector("#c-run .cmsetup [data-act=start]")&&!document.getElementById("cm-rs")&&!document.querySelector("#cm-rest")&&!document.getElementById("cm-sm")&&!document.querySelector("[data-tog]")') && await g.ev('document.querySelectorAll("#c-run [data-tok]").length') === 5);
+        check('combat 6: Aldric, Brenna default to the first side, the goblins to the second; Combat: sides and Fight... are in the right-click menu', await g.ev('Array.from(document.querySelectorAll("#c-run [data-tok]")).map(function(s){return s.value}).join("")') === '00111' && JSON.parse(await g.ev('JSON.stringify(window.OBRX._dev.ctxLabels().map(function(x){return x.label}))')).slice().sort().join('|') === 'Combat: Foes|Combat: Not fighting|Combat: Party|Fight...');
+        check('combat 6: gear buttons carry no outline box (hub header and card)', await g.ev('getComputedStyle(document.querySelector("#c-run .ibtn")).borderTopWidth') === '0px' && await g.ev('getComputedStyle(document.querySelector(".hubhead button.gear")).borderTopWidth') === '0px');
+        await shotBoth(g, 'set-up', { full: true }, 'combat-6-');
+        await g.click('[data-act="start"]'); await g.sleep(1200);
         const gs = () => g.ev('JSON.stringify(CombatUI._state().c)').then(JSON.parse);
         let cs = await gs();
-        check('combat: started in round 0; Brenna is Not fighting (in the roster, in neither side); set-up closes', cs.rd === 0 && cs.ro.length === 3 && cs.nf.join() === '1' && cs.sd[0].m.join() === '0' && cs.sd[1].m.join() === '2' && cs.sd[1].n === 'Goblins' && await g.ev('!document.querySelector("#c-run .cmsetup")'));
-        check('combat: the card shows the round, the steps with the current one marked, ONE primary button, no Enter or Next step buttons, typed boxes under it', await g.ev('document.querySelectorAll("#c-run .steps li.cur").length') === 1 && await g.ev('document.querySelectorAll("#c-run [data-act=primary]").length') === 1 && await g.ev('document.querySelectorAll("#c-run [data-act=next],#c-run [data-act=roll]").length') === 0 && await g.ev('document.querySelectorAll("#c-run .cmtyped input").length') === 2 && /Roll surprise/i.test(await g.ev('document.querySelector("[data-act=primary]").innerText')));
-        await pp.sleep(600);
-        check('combat: the player already in the room gets the banner popover at once', await pp.ev('!!document.getElementById("dev-pop")') && /Surprise/i.test(await pp.ev('document.getElementById("cbt").innerText')));
-        const late = await open('dev=player', 560, 700); await late.sleep(500);
-        check('combat: a player who joins AFTER combat starts gets the banner popover too', await late.ev('!!document.getElementById("dev-pop")') && /Surprise/i.test(await late.ev('document.getElementById("dev-pop").contentDocument.body.innerText')));
-        await shotBoth(g, 'gm-surprise', { full: true });
-        await g.click('[data-act="primary"]'); await g.sleep(250);
-        check('combat: pressing the button with no die typed says what is missing and changes nothing', (await gs()).rd === 0 && !(await gs()).sd[0].sr && /Type the die/.test(await g.ev('document.getElementById("cm-msg").textContent')));
-        await g.ev('document.getElementById("cm-in-0").value=1;document.getElementById("cm-in-1").value=2'); await g.click('[data-act="primary"]'); await g.sleep(400);
+        check('combat 6: started at Round 1, Turn 1 with the sides and roster; the card has a round bar, Surprise, pairs, hits, hit points and no steps, log, undo, dice or restrictions', cs.rd === 1 && cs.tn === 1 && cs.ro.length === 5 && /Round 1/i.test(await g.ev('document.querySelector(".cmrd").innerText')) && /Turn 1/i.test(await g.ev('document.querySelector(".cmrd").innerText')) && await g.ev('!document.querySelector(".steps")&&!document.querySelector("[data-act=undo]")&&!document.querySelector("#cm-log")&&!document.querySelector("[data-act=primary]")&&!document.querySelector("[data-tog]")'), JSON.stringify([cs.rd, cs.tn, cs.ro.length]) + await g.ev('document.querySelector(".cmrd")&&document.querySelector(".cmrd").innerText'));
+        const hps = () => g.ev('JSON.stringify(window.OBRX.scene.items.getItems().then(function(a){return 0}))').then(() => g.ev('window.OBRX.scene.items.getItems().then(function(a){return JSON.stringify(a.filter(function(i){return /^Goblin/.test(i.name)}).map(function(i){var k=i.metadata["' + NSK + '/cs"];return [i.name,k&&k.h]}))})').then(JSON.parse));
+        let hp = await hps();
+        check('combat 6: hit points were rolled from the MM hit dice for the goblins (Goblin: 1-7 hit points) and for no PC; each goblin has a number label drawn on this (GM) client', hp.length === 3 && hp.every(x => x[1] && x[1][0] >= 1 && x[1][0] <= 8 && x[1][0] === x[1][1]) && await g.ev('document.querySelectorAll("#dev-map .dev-dot").length') === 3 && await g.ev('Array.from(document.querySelectorAll("#dev-map .dev-dot")).every(function(d){return /^\\d+$/.test(d.textContent)})') && await g.ev('window.OBRX.scene.items.getItems(["t1","t2"]).then(function(a){return a.every(function(i){return !i.metadata["' + NSK + '/cs"]})})'), JSON.stringify(hp));
+        // round bar
+        await g.click('[data-act="init"]'); await g.sleep(400);
+        const it = await g.ev('document.querySelector(".cminit").innerText');
+        check('combat 6: one Roll initiative button gives "Party n, Foes m: ... goes first" (or the tie note); no phases', /^Party [1-6], Foes [1-6]: (Party goes first|Foes goes first|tie, both sides act together)$/.test(it) && ((await gs()).w !== 2 || /longer weapon/.test(await g.ev('document.getElementById("c-run").innerText'))), it);
+        // surprise: type dice, words
+        await g.ev('document.getElementById("cm-sur").open=true'); await g.sleep(150);
+        await g.ev('(function(){var a=document.querySelector("[data-sd=\\"0\\"]");a.value=1;a.dispatchEvent(new Event("change",{bubbles:true}))})()'); await g.sleep(300);
+        await g.ev('(function(){var a=document.querySelector("[data-sd=\\"1\\"]");a.value=2;a.dispatchEvent(new Event("change",{bubbles:true}))})()'); await g.sleep(400);
+        const sw = await g.ev('document.querySelector(".cmwords").innerText');
+        check('combat 6: surprise dice typed in give the result in words (Goblins lose 1 segment, Party may act in segment 1), report only', /^Foes surprised: lose 1 segment; Party may act in segment 1\.$/.test(sw), sw);
+        await g.click('[data-act="sur-roll"]'); await g.sleep(400);
+        check('combat 6: Roll both rolls the d6 for each side and states the outcome', /(surprised: lose|Nobody is surprised|equally)/.test(await g.ev('document.querySelector(".cmwords").innerText')) && (await gs()).sd[0].sr >= 1 && (await gs()).sd[1].sr >= 1);
+        // pairs: drag Aldric to Goblin 1 and Brenna to Goblin 2; a duplicate is refused
+        await g.ev('window.OBRX._dev.drag("t1","t3")'); await g.sleep(500); await g.ev('window.OBRX._dev.drag("t2","' + (await g.ev('window.OBRX.scene.items.getItems().then(function(a){return a.filter(function(i){return i.name==="Goblin 2"})[0].id})')) + '")'); await g.sleep(500);
+        await g.ev('window.OBRX._dev.drag("t3","t1")'); await g.sleep(500);
         cs = await gs();
-        check('combat: surprise 1 vs 2 in one press: Goblins lose 1 segment; the step is struck through with its result; segment 1 is current and says Party acts', cs.sd[1].sl === 1 && cs.sg === 1 && /Goblins lose 1/.test(await g.ev('document.querySelector("#c-run .steps li.done").innerText')) && await g.ev('!!document.querySelector("#c-run .steps li.done s")') && /Party acts/.test(await g.ev('document.querySelector("#c-run .steps li.cur").innerText')));
-        check('combat: the player sees the surprise rolls (final only) and "Your side acts now" during segment 1', /Goblins rolled 2 for surprise/.test(await pp.ev('document.getElementById("cbt").innerText')) && /Your side acts now/i.test(await pp.ev('document.getElementById("cbt").innerText')));
-        await g.click('[data-act="primary"]'); await g.sleep(300);
-        cs = await gs(); check('combat: "Party acts: done" ends the surprise segment and starts round 1 at initiative (typed boxes again)', cs.rd === 1 && cs.ph === 1 && await g.ev('document.querySelectorAll("#c-run .cmtyped input").length') === 2 && /Roll initiative/i.test(await g.ev('document.querySelector("[data-act=primary]").innerText')));
-        await shotBoth(g, 'gm-initiative-typed', { full: true });
-        await g.ev('document.getElementById("cm-in-0").value=4;document.getElementById("cm-in-1").value=4'); await g.click('[data-act="primary"]'); await g.sleep(300);
-        cs = await gs(); check('combat: typed 4 and 4 is a tie; both sides act together; the tie note shows', cs.w === 2 && cs.ph === 2 && /Both sides act: done/i.test(await g.ev('document.querySelector("[data-act=primary]").innerText')) && /longer weapon/.test(await g.ev('document.getElementById("c-run").innerText')));
-        await g.click('[data-act="undo"]'); await g.sleep(300);
-        cs = await gs(); check('combat: Undo last step takes initiative back to unrolled and logs the undo (kind 9)', cs.ph === 1 && cs.w === -1 && (await g.ev('CombatUI._state().logs[1].some(function(e){return e[1]===9})')) && /GM undid/.test(await g.ev('(function(){document.getElementById("cm-log").open=true;return document.querySelector("#cm-log").innerText})()')));
-        // Dice tray: stale value ignored, others ignored, first new value from an owner taken
-        await g.ev('window.OBRX._dev.setTray("dev-player", [6])'); await g.sleep(200);
-        await g.click('[data-act="cog"]'); await g.set('#cm-rs', '2'); await g.sleep(300); await g.click('[data-act="cog"]'); await g.sleep(300);
-        const wt = await g.ev('document.querySelector("#c-run .cmact").innerText');
-        check('combat: Dice = tray shows who it is waiting for (Aldric for the Party, the GM for the Foes), with a sheet fallback and no roll button', /Waiting for Aldric \(your token\) to roll a d6 in the Dice tray/.test(wt) && /Waiting for the GM's d6/.test(wt) && /Roll in the sheet instead/i.test(wt) && await g.ev('!document.querySelector("#c-run [data-act=primary]")'), wt.replace(/\s+/g, ' '));
-        await shotBoth(g, 'gm-tray-waiting', { full: true });
-        await g.sleep(1700);
-        check('combat: a tray roll that was already there when the step asked (stale 6) is not used', (await gs()).ph === 1 && (await gs()).sd[0].in === 0);
-        await g.ev('window.OBRX._dev.setTray("dev-player2", [3])'); await g.sleep(1800);
-        check('combat: a roll from a player who may not roll for either side is ignored', (await gs()).ph === 1 && !(await gs()).sd[0].in);
-        await g.ev('window.OBRX._dev.setTray("dev-player", [6])'); await g.sleep(2200);
-        check('combat: the first new d6 from the Party\'s owner is taken for the Party (a repeat of the stale 6 counts: it is a new roll); still waiting for the GM', await (async () => { const t = await g.ev('document.querySelector("#c-run .cmact").innerText'); return /Party: got 6 from Dev Player/.test(t) && (await gs()).ph === 1 || (console.log('  [debug] ' + t.replace(/\s+/g, ' ') + ' ' + JSON.stringify(await g.ev('JSON.stringify(CombatUI._wait())'))), false); })());
-        await g.ev('window.OBRX._dev.setTray("dev-gm", [2])'); await g.sleep(2000);
-        await g.ev('document.getElementById("cm-log").open=true'); await g.sleep(200);
-        cs = await gs(); check('combat: the GM\'s roll completes the step: Party 6, Goblins 2, Party wins; the log names who rolled', cs.sd[0].in === 6 && cs.sd[1].in === 2 && cs.w === 0 && cs.ph === 2 && /Party rolled 6 for initiative \(Owlbear Dice tray by Dev Player\)/.test(await g.ev('document.getElementById("c-run").innerText')) && /Goblins rolled 2 for initiative \(Owlbear Dice tray by Dev GM\)/.test(await g.ev('document.getElementById("c-run").innerText')));
-        await shotBoth(g, 'gm-card-midround', { full: true });
-        await pp.sleep(400);
-        check('combat: the player on the acting side sees "Your side acts now" and the short log (final rolls only)', /Your side acts now/i.test(await pp.ev('document.getElementById("cbt").innerText')) && /Party rolled 6 for initiative/.test(await pp.ev('document.getElementById("cbt").innerText')));
-        await shotBoth(pp, 'player-acts', { full: true });
-        await g.click('[data-act="primary"]'); await g.sleep(300); await pp.sleep(400);
-        check('combat: "Party acts: done" hands over to the Goblins ("Goblins act: done"); the player\'s line goes away', /Goblins act: done/i.test(await g.ev('document.querySelector("[data-act=primary]").innerText')) && !/Your side acts now/i.test(await pp.ev('document.getElementById("cbt").innerText')));
-        // sheet fallback, restrictions, move, undo
-        await g.click('[data-act="primary"]'); await g.sleep(250); await g.click('[data-act="primary"]'); await g.sleep(300);
-        check('combat: Next round starts round 2; with the tray set it waits again (fresh baseline), and the sheet fallback rolls both', (await gs()).rd === 2 && await g.ev('!!document.querySelector("#c-run [data-act=sheetinstead]")'));
-        await g.click('[data-act="sheetinstead"]'); await g.sleep(400);
-        cs = await gs(); check('combat: "Roll in the sheet instead" rolls both and the log says so', cs.rd === 2 && cs.ph === 2 && /rolled in the sheet/.test(await g.ev('document.getElementById("c-run").innerText')));
-        await g.click('[data-act="cog"]'); await g.sleep(250);
-        await g.click('[data-tog="cm.declare"]'); await g.sleep(300);
-        check('combat: restrictions summary counts what changed from RAW; the panel opens mid-fight', /Restrictions: 1 changed from RAW/i.test(await g.ev('document.querySelector("#cm-rest summary").innerText')) && (await gs()).op === 2);
-        await g.set('[data-mv="1"]', '0'); await g.sleep(300);
-        cs = await gs(); check('combat: moving Brenna from Not fighting into the Party (mid-fight) works', cs.nf.length === 0 && cs.sd[0].m.join() === '0,1');
-        await g.set('[data-mv="1"]', '2'); await g.sleep(300);
-        await g.click('[data-act="cog"]'); await g.sleep(250);
-        // players cannot write
-        const denied = await pp.ev('TK.OBR.scene.setMetadata({"io.github.solid-state-games.1e-toolkit/combat":{on:0}}).then(function(){return "wrote"},function(e){return "denied"})');
-        check('combat: a player cannot write the combat state', denied === 'denied' && (await gs()).on === 1);
-        // end
-        await g.ev('window.confirm=function(){return true};window.__dl=null;var oc=URL.createObjectURL;URL.createObjectURL=function(b){window.__dl=b;return oc.call(URL,b)}');
-        await g.click('[data-act="end"]'); await g.sleep(500);
-        const dl = await g.ev('window.__dl?window.__dl.text():Promise.resolve("")');
-        check('combat: End combat downloads the log as text (sides, surprise, rounds, sources) and clears the scene keys', /1e Toolkit combat log/.test(dl) && /Surprise segments/.test(dl) && /Round 1/.test(dl) && /physical die typed in/.test(dl) && /Owlbear Dice tray by Dev Player/.test(dl) && /GM undid/.test(dl) && await g.ev('JSON.stringify(Object.keys(JSON.parse(localStorage.getItem("toolkit-dev-scene")).meta))') === '[]', dl.length + ' chars');
-        check('combat: the banner popover closes for players, who see "No combat is running"', await pp.ev('!document.getElementById("dev-pop")') && /No combat is running/.test(await pp.ev('document.getElementById("cbt").innerText')) && await late.ev('!document.getElementById("dev-pop")'));
-        // surprise rolled earlier: typed dice, same segments, source "rolled earlier"
-        await g.ev('window.OBRX._dev.setTray("dev-gm", [])'); await g.sleep(200);
-        await g.set('#cm-sm', 'earlier'); await g.set('#cm-rs', '0'); await g.click('[data-act="start"]'); await g.sleep(500);
-        check('combat: "Already rolled" makes the surprise step ask for the two dice and offers "Apply the surprise dice"', /Apply the surprise dice/i.test(await g.ev('document.querySelector("[data-act=primary]").innerText')) && await g.ev('document.querySelectorAll("#c-run .cmtyped input").length') === 2);
-        await g.ev('document.getElementById("cm-in-0").value=2;document.getElementById("cm-in-1").value=1'); await g.click('[data-act="primary"]'); await g.sleep(400);
-        cs = await gs(); check('combat: earlier dice 2 and 1 give Party the lost segment (1) exactly like rolled ones, logged "rolled earlier"', cs.sd[0].sl === 1 && cs.sd[1].sl === 0 && /rolled earlier/.test(await g.ev('document.getElementById("c-run").innerText')));
-        await g.click('[data-act="end"]'); await g.sleep(400);
-        await g.set('#cm-sm', 'none'); await g.click('[data-act="start"]'); await g.sleep(500);
-        check('combat: "No surprise" at set-up goes straight to round 1 initiative', (await gs()).rd === 1 && /No surprise/.test(await g.ev('JSON.stringify(CombatUI._state().logs[0])')));
-        await g.click('[data-act="end"]'); await g.sleep(400);
-        await g.click('[data-tab="sheets"]');
-    }
-    {   // ---------- combat 4: right-click sides, undo that survives a reload, attacks by drag ----------
-        await g.ev('(function(){var s=JSON.parse(localStorage.getItem("toolkit-dev-scene"));s.meta={};s.pm={};localStorage.setItem("toolkit-dev-scene",JSON.stringify(s))})()');
-        await g.ev('window.OBRX.scene.items.updateItems(["t3"],function(d){d[0].name="Goblin 3"})'); await g.sleep(300);
-        await g.click('[data-tab="com"]'); await g.click('[data-top="run"]'); await g.sleep(300);
-        const labels = await g.ev('JSON.stringify(window.OBRX._dev.ctxLabels().map(function(x){return x.label}))');
-        check('right-click: the GM gets one menu item per side (current names) plus Not fighting, and Attack...', JSON.parse(labels).slice().sort().join('|') === 'Attack...|Combat: Foes|Combat: Not fighting|Combat: Party', labels);
-        await g.ev('window.OBRX._dev.ctxClick("io.github.solid-state-games.1e-toolkit/side-1", ["t1","t2"])'); await g.sleep(400);
-        check('right-click before combat: the choice shows in the set-up table (two tokens moved to Foes at once)', await g.ev('Array.from(document.querySelectorAll("#c-run [data-tok]")).map(function(s){return s.value}).join("")') === '111');
-        await g.ev('(function(){var d=document.createElement("div");d.id="devctx";d.style.cssText="position:fixed;left:40px;top:300px;background:#fff;color:#000;border:1px solid #000;padding:4px;z-index:99999;font:13px Jost,sans-serif";d.innerHTML=window.OBRX._dev.ctxLabels().map(function(x){return "<div style=\\"padding:3px 10px\\">"+x.label+"</div>"}).join("");document.body.appendChild(d)})()');
-        await shotBoth(g, 'right-click-sides', { full: true }, 'combat-4-'); await g.ev('document.getElementById("devctx").remove()');
-        await g.ev('window.OBRX._dev.ctxClick("io.github.solid-state-games.1e-toolkit/side-0", ["t1","t2"])'); await g.sleep(300);
-        await g.set('#cm-rs', '1'); await g.set('#cm-sm', 'none'); await g.click('[data-act="start"]'); await g.sleep(600);
-        const gs = () => g.ev('JSON.stringify(CombatUI._state().c)').then(JSON.parse);
-        let cs = await gs();
-        await g.ev('window.OBRX._dev.addToken("Orc 1")'); await g.sleep(400);
-        const orc = await g.ev('window.OBRX.scene.items.getItems().then(function(a){return a.filter(function(i){return i.name==="Orc 1"})[0].id})');
-        await g.ev('window.OBRX._dev.ctxClick("io.github.solid-state-games.1e-toolkit/side-1", ["' + orc + '"])'); await g.sleep(500);
+        const pr = await g.ev('JSON.stringify(Array.from(document.querySelectorAll(".cmpair")).map(function(p){return p.innerText}))').then(JSON.parse);
+        check('combat 6: the Fight tool (drag) adds pairs, no roll, no checks; a pair in the other direction is the same pair', cs.pr.length === 2 && pr.length === 2 && /Aldric/.test(pr[0]) && /Goblin 1/.test(pr[0]));
+        check('combat 6: each pair row shows BOTH directions: needs N to hit (PC weapon chosen in the row, monster by HD), attacks per round, damage vs S-M and L, speed factor, editable target AC', pr[0].match(/needs \d+ or more on d20/gi).length === 2 && /Aldric \(your token\) hits Goblin 1/i.test(pr[0]) && /Goblin 1 hits Aldric/i.test(pr[0]) && /vs S-M, .* vs L/.test(pr[0]) && /speed \d/.test(pr[0]) && /3\/2|^1$|\n1\n/.test(pr[0]) && await g.ev('document.querySelectorAll(".cmpair [data-pac]").length') === 4 && await g.ev('document.querySelectorAll(".cmpair [data-pw]").length') === 2, pr[0].replace(/\s+/g, ' '));
+        const need0 = await g.ev('document.querySelector(".cmpair .cmneed").innerText');
+        await g.ev('(function(){var a=document.querySelector("[data-pac=\\"0:0\\"]");a.value=2;a.dispatchEvent(new Event("change",{bubbles:true}))})()'); await g.sleep(400);
+        check('combat 6: typing a target AC changes the number needed', need0 !== await g.ev('document.querySelector(".cmpair .cmneed").innerText') && (await gs()).pr[0][4] === 2);
+        await g.ev('(function(){var a=document.querySelectorAll("[data-pw]")[1];a.value=1;a.dispatchEvent(new Event("change",{bubbles:true}))})()'); await g.sleep(400);
+        check('combat 6: a missile weapon (Brenna\'s long bow) gets the firing-into-melee tooltip (DMG p.63) and "2 shots"; a melee weapon has none', await g.ev('Array.from(document.querySelectorAll(".cmpair")[1].querySelectorAll(".inf")).some(function(i){return /DMG p\\.63/.test(i.title)&&/random/.test(i.title)})') && /2 shots/.test(await g.ev('document.querySelectorAll(".cmpair")[1].innerText')) && await g.ev('!Array.from(document.querySelectorAll(".cmpair")[0].querySelectorAll(".inf")).some(function(i){return /DMG p\\.63/.test(i.title)})'));
+        check('combat 6: players still see nothing (no pair, no labels)', await pp.ev('!document.getElementById("dev-map")&&!/versus|Goblin 1/.test(document.body.innerText)'));
+        // hits and the morale flag
+        for (const [i, n] of [[0, 2], [1, 1]]) for (let j = 0; j < n; j++) { await g.click('[data-act="hit"][data-i="' + i + '"][data-d="1"]'); await g.sleep(250); }
+        check('combat 6: + per side; Party hitting twice as often as Foes (2 against 1) shows "Foes check morale: Party hit twice as often (DMG p.67)"', (await gs()).ht.join() === '2,1' && /Foes check morale: Party hit twice as often \(DMG p\.67\)\./.test(await g.ev('document.getElementById("c-run").innerText')));
+        await shotBoth(g, 'card-midround', { full: true }, 'combat-6-');
+        // hit points: type, dead goblin, casualties
+        const gid = await g.ev('window.OBRX.scene.items.getItems().then(function(a){return a.filter(function(i){return i.name==="Goblin 1"})[0].id})');
+        await g.ev('(function(){var a=document.querySelector("[data-hp=\\"' + gid + '\\"]");a.value="-99";a.dispatchEvent(new Event("change",{bubbles:true}))})()'); await g.sleep(1200);
         cs = await gs();
-        check('right-click in combat: a token not yet in the roster is added to the chosen side; Not fighting takes it out of the sides', cs.ro.length === 4 && cs.sd[1].m.indexOf(3) >= 0 && (await (async () => { await g.ev('window.OBRX._dev.ctxClick("io.github.solid-state-games.1e-toolkit/side-2", ["' + orc + '"])'); await g.sleep(400); const c2 = await gs(); return c2.nf.indexOf(3) >= 0 && c2.sd[1].m.indexOf(3) < 0; })()));
-        // initiative typed: Party 6, Goblins 2, so Party acts
-        await g.ev('document.getElementById("cm-in-0").value=6;document.getElementById("cm-in-1").value=2'); await g.click('[data-act="primary"]'); await g.sleep(500);
-        check('combat: Party has initiative and acts first', (await gs()).ph === 2 && (await gs()).w === 0);
-        // attacks: a player drags from their own token to the Goblin; refused from someone else's token; GM sees the card
-        const ap = await open('dev=player', 560, 700); await ap.click('[data-tab="cbt"]'); await ap.sleep(600);
-        await ap.ev('window.OBRX._dev.drag("t3","t1")'); await ap.sleep(500);
-        check('attack: a player cannot start an attack from a token that is not theirs (no request is written)', await g.ev('!document.querySelector("#c-run .cmatk")'));
-        await ap.ev('window.OBRX._dev.drag("t1","t3")'); await g.sleep(900);
-        const card = await g.ev('document.querySelector("#c-run .cmatk")?document.querySelector("#c-run .cmatk").innerText:""');
-        check('attack: dragging from Aldric to Goblin 3 makes the GM card appear with who asked, the weapon, target AC from the MM (Goblin AC 6) and the number needed', /Aldric/.test(card) && /Goblin 3/.test(card) && /asked by Dev Player/.test(card) && /Needs \d+ or more on a d20/.test(card) && await g.ev('document.querySelector("[data-atk=ac]").value') === '6', card.replace(/\s+/g, ' '));
-        await shotBoth(g, 'attack-gm-card', { full: true }, 'combat-4-');
-        await g.ev('document.getElementById("cm-atk-in-0").value=14'); await g.click('[data-act="atkroll"]'); await g.sleep(600);
-        await g.ev('document.getElementById("cm-log").open=true'); await g.sleep(200);
-        const rw = await g.ev('document.querySelector("#c-run .rollwin").innerText');
-        check('attack: the d20 is entered, the result is logged as kind 2 and shown as "Aldric ... attacks Goblin 3: rolled 14, needs N: hit or miss" with no damage', /attacks Goblin 3: rolled 14, needs -?\d+: (hit|miss)/.test(rw) && (await g.ev('CombatUI._state().logs[1].filter(function(e){return e[1]===2}).length')) === 1 && !(await g.ev('!!document.querySelector("#c-run .cmatk")')), rw.replace(/\s+/g, ' '));
-        await ap.sleep(500);
-        check('attack: the player sees the same line in the roll window', /attacks Goblin 3: rolled 14/.test(await ap.ev('document.getElementById("cbt").innerText')));
-        await shotBoth(ap, 'attack-player', { full: true }, 'combat-4-');
-        // checks and override: the Goblins do not act now
-        await g.ev('window.OBRX._dev.drag("t3","t1")'); await g.sleep(700);
-        const pc = await g.ev('document.querySelector("#c-run .cmatk")?document.querySelector("#c-run .cmatk").innerText:""');
-        check('attack: a GM attack from a side that does not act now shows the reason and an Override button; Dismiss clears it', /does not act now/.test(pc) && /Override and attack/i.test(pc));
-        await g.click('[data-act="atkno"]'); await g.sleep(500);
-        check('attack: dismissed, the card is gone and nothing was logged', await g.ev('!document.querySelector("#c-run .cmatk")') && (await g.ev('CombatUI._state().logs[1].filter(function(e){return e[1]===2}).length')) === 1);
-        // tray: waiting line names the owner of the attacker, the d20 comes from them
-        await g.click('[data-act="cog"]'); await g.set('#cm-rs', '2'); await g.sleep(300); await g.click('[data-act="cog"]'); await g.sleep(300);
-        await ap.ev('window.OBRX._dev.drag("t1","t3")'); await g.sleep(1000);
-        check('attack allowance: Aldric (1 attack a round) is refused a second attack in the round until the GM overrides', /used all 1 attack this round/.test(await g.ev('document.querySelector("#c-run .cmatk").innerText'))); await g.click('[data-act="atkov"]'); await g.sleep(1000);
-        const tw = await g.ev('document.querySelector("#c-run .cmatk").innerText');
-        check('attack: with the Dice tray the card waits for the attacker\'s owner (Aldric\'s player), not the GM', /Waiting for Aldric \(your token\) to roll a d20 in the Dice tray/.test(tw), tw.replace(/\s+/g, ' '));
-        await g.ev('window.OBRX._dev.setTray("dev-gm", [20])'); await g.sleep(1800);
-        check('attack: a d20 from the GM\'s tray is ignored for a player\'s attacker', await g.ev('!!document.querySelector("#c-run .cmatk")'));
-        await g.ev('window.OBRX._dev.setTray("dev-player", [17])'); await g.sleep(2200);
-        check('attack: the owner\'s tray d20 (17) resolves it and the log says who rolled it', /rolled 17/.test(await g.ev('document.querySelector("#c-run .rollwin").innerText')) && !(await g.ev('!!document.querySelector("#c-run .cmatk")')), await g.ev('JSON.stringify([document.querySelector("#c-run .cmatk")&&document.querySelector("#c-run .cmatk").innerText,CombatUI._wait()&&CombatUI._wait().vals,JSON.stringify(CombatUI._state().logs[1].slice(-2))])'));
-        // undo survives a reload and walks back
-        await g.nav(BASE + '/index.html?dev=gm'); await g.sleep(900); await g.click('[data-tab="com"]'); await g.sleep(500);
-        const n0 = await g.ev('CombatUI._state().undo.length');
-        check('undo: the stack is in the scene, so after a reload the Undo button is live with several steps', n0 >= 3 && await g.ev('!document.querySelector("[data-act=undo]").disabled'), String(n0));
-        await g.click('[data-act="undo"]'); await g.sleep(400); await g.click('[data-act="undo"]'); await g.sleep(400);
-        cs = await gs();
-        check('undo: pressing it twice takes the two attacks back out of the log (the log entries go, kind 9 lines record the undo)', (await g.ev('CombatUI._state().logs[1].filter(function(e){return e[1]===2}).length')) === 0 && (await g.ev('CombatUI._state().logs[1].filter(function(e){return e[1]===9}).length')) === 2);
-        await shotBoth(g, 'undo-walking-back', { full: true }, 'combat-4-');
-        await g.click('[data-act="undo"]'); await g.sleep(400); cs = await gs();
-        check('undo: a third press takes the initiative roll back (round 1, initiative unrolled) and the stack shrinks by three', cs.rd === 1 && cs.ph === 1 && cs.w === -1 && (await g.ev('CombatUI._state().undo.length')) === n0 - 3, JSON.stringify([cs.rd, cs.ph, cs.w]));
-        await g.ev('window.confirm=function(){return true};window.__dl=null;var oc=URL.createObjectURL;URL.createObjectURL=function(b){window.__dl=b;return oc.call(URL,b)}');
-        await g.click('[data-act="end"]'); await g.sleep(500);
-        check('combat 4: End combat clears the undo stack and the side choices too', await g.ev('JSON.stringify(Object.keys(JSON.parse(localStorage.getItem("toolkit-dev-scene")).meta))') === '[]');
-        await g.click('[data-tab="sheets"]');
-    }
-    {   // ---------- combat 5: attacks per round (1 of 2, monster routine), the cs stamp, acted dots ----------
-        await g.ev('(function(){var s=JSON.parse(localStorage.getItem("toolkit-dev-scene"));s.meta={};s.pm={};localStorage.setItem("toolkit-dev-scene",JSON.stringify(s))})()');
-        await g.ev('window.OBRX.scene.items.updateItems(["t3"],function(d){d[0].name="Ape, carnivorous"});window.OBRX.scene.items.updateItems(["t2"],function(d){var s=SheetRules.blank();Object.assign(s,{nm:"Brenna",race:"Human",cl:["Fighter"],lv:[13],sc:[16,10,10,14,15,12],pf:["Sword, Long & scabbard","Bow, long"]});d[0].metadata["io.github.solid-state-games.1e-toolkit/sheet"]=s})'); await g.sleep(400);
-        await g.click('[data-tab="com"]'); await g.click('[data-top="run"]'); await g.sleep(300);
-        await g.set('#cm-rs', '1'); await g.set('#cm-sm', 'none'); await g.click('[data-act="start"]'); await g.sleep(600);
-        const gs = () => g.ev('JSON.stringify(CombatUI._state().c)').then(JSON.parse);
-        await g.send('Page.bringToFront');   // a hidden tab throttles timers to 1 s, which would starve the dot redraw
-        const dots = async () => { await g.sleep(700); return g.ev('Array.from(document.querySelectorAll("#dev-map .dev-dot")).map(function(d){return d.dataset.state}).sort().join()'); };
-        await g.ev('document.getElementById("cm-in-0").value=6;document.getElementById("cm-in-1").value=2'); await g.click('[data-act="primary"]'); await g.sleep(500);
-        check('combat 5: no dots before anyone has attacked or finished acting', await dots() === '' && await g.ev('!document.getElementById("dev-map")'));
-        const typed = async v => { for (let j = 0; j < v.length; j++) await g.ev('document.getElementById("cm-atk-in-' + j + '").value=' + v[j]); await g.click('[data-act="atkroll"]'); await g.sleep(700); };
-        await g.ev('window.OBRX._dev.drag("t2","t3")'); await g.sleep(700);
-        check('attack allowance: a 13th level fighter has two attacks (PHB p.25): the card says "Attack 1 of 2"', /Attack 1 of 2/i.test(await g.ev('document.querySelector("#c-run .cmatk h4").innerText')));
-        await shotBoth(g, 'attack-1-of-2', { full: true }, 'combat-5-');
-        await typed([15]); await g.sleep(300);
-        check('attack allowance: the first attack is logged and the token\'s cs records 1 used (round stamp 100) and the allowance; an open dot shows on the token', await g.ev('window.OBRX.scene.items.getItems(["t2"]).then(function(a){var k=a[0].metadata["io.github.solid-state-games.1e-toolkit/cs"];return JSON.stringify([k.rs,k.at,k.mx])})') === '[100,1,2]' && await dots() === 'some', await dots() + ' ' + await g.ev('window.OBRX.scene.items.getItems(["t2"]).then(function(a){return JSON.stringify(a[0].metadata)})'));
-        await g.ev('window.OBRX._dev.drag("t2","t3")'); await g.sleep(700);
-        check('attack allowance: the second attack says "Attack 2 of 2"', /Attack 2 of 2/i.test(await g.ev('document.querySelector("#c-run .cmatk h4").innerText')));
-        await typed([4]); await g.sleep(300);
-        check('attack allowance: after the last attack the dot is filled (done)', await dots() === 'done');
-        await shotBoth(g, 'dots', { full: true }, 'combat-5-');
-        await g.ev('window.OBRX._dev.drag("t2","t3")'); await g.sleep(700);
-        const refuse = await g.ev('document.querySelector("#c-run .cmatk").innerText');
-        check('attack allowance: a third attack is refused with the reason and an Override button; Dismiss clears it', /used all 2 attacks this round \(2 of 2\)/.test(refuse) && /Override and attack/i.test(refuse));
-        await g.click('[data-act="atkno"]'); await g.sleep(400);
-        await g.ev('window.OBRX._dev.drag("t2","t3")'); await g.sleep(700); await g.click('[data-act="atkov"]'); await g.sleep(300);
-        await typed([12]); await g.sleep(300);
-        check('attack allowance: with the GM override the third attack goes through and the log says "GM override"', /GM override/.test(await g.ev('(function(){document.getElementById("cm-log").open=true;return document.querySelector("#c-run .rollwin").innerText})()')));
-        await g.click('[data-act="undo"]'); await g.sleep(500);
-        check('attack allowance: undo takes the override attack back out of the log and restores the token\'s count (2 used) so the dot stays filled', !/GM override/.test(await g.ev('document.querySelector("#c-run .rollwin").innerText')) && await g.ev('window.OBRX.scene.items.getItems(["t2"]).then(function(a){return a[0].metadata["io.github.solid-state-games.1e-toolkit/cs"].at})') === 2 && await dots() === 'done');
-        await g.click('[data-act="undo"]'); await g.sleep(500);
-        check('attack allowance: undoing the second attack puts the count back to 1 and the dot back to open', await g.ev('window.OBRX.scene.items.getItems(["t2"]).then(function(a){return a[0].metadata["io.github.solid-state-games.1e-toolkit/cs"].at})') === 1 && await dots() === 'some', await dots() + ' at=' + await g.ev('window.OBRX.scene.items.getItems(["t2"]).then(function(a){return JSON.stringify(a[0].metadata["io.github.solid-state-games.1e-toolkit/cs"])})') + ' undo=' + await g.ev('JSON.stringify(CombatUI._state().undo.map(function(u){return [u.l,u.x]}))'));
-        // dots off in set-up
-        await g.click('[data-act="cog"]'); await g.click('#cm-dots'); await g.sleep(600);
-        check('dots: the set-up switch turns the dots off on this browser, and on again', await dots() === '' && (await g.click('#cm-dots'), await g.sleep(600), await dots() === 'some'), await dots());
-        await g.click('[data-act="cog"]'); await g.sleep(200);
-        // the monster: a routine of 3 attacks in one drag
-        await g.click('[data-act="primary"]'); await g.sleep(400);
-        await g.ev('window.OBRX._dev.drag("t3","t2")'); await g.sleep(700);
-        const mc = await g.ev('document.querySelector("#c-run .cmatk").innerText');
-        check('monster routine: the Ape (MM: 3 attacks, 1-4/1-4/1-8) shows "Routine 1 of 1" with three d20 rows, one per attack form', /Routine 1 of 1/i.test(mc) && /1-4: needs/.test(mc) && /1-8: needs/.test(mc) && await g.ev('document.querySelectorAll("#c-run .cmforms li").length') === 3 && await g.ev('document.querySelectorAll("#c-run [id^=cm-atk-in-]").length') === 3, mc.replace(/\s+/g, ' '));
-        await shotBoth(g, 'monster-three-attacks', { full: true }, 'combat-5-');
-        await typed([14, 3, 18]);
-        const log = await g.ev('(function(){document.getElementById("cm-log").open=true;return document.querySelector("#c-run .rollwin").innerText})()');
-        check('monster routine: one drag logs three attacks, each with its own roll and result', (log.match(/Ape, carnivorous attacks Brenna/g) || []).length === 3 && /\(1-8\): rolled 18/.test(log), log.replace(/\s+/g, ' ').slice(-300));
-        await g.ev('window.OBRX._dev.drag("t3","t2")'); await g.sleep(700);
-        check('monster routine: a second routine in the round is refused (used all 1 routine)', /used all 1 routine this round/.test(await g.ev('document.querySelector("#c-run .cmatk").innerText')));
-        await g.click('[data-act="atkno"]'); await g.sleep(300);
-        // end of round clears the dots by the lazy reset; End combat removes them
-        await g.click('[data-act="primary"]'); await g.sleep(500);
-        check('dots: when both sides have acted (end of round) every dot is filled; the new round clears them without any write to the tokens', await (async () => { const d = (await dots()).split(','); return d.length === (await gs()).ro.length && d.every(x => x === 'done'); })() && (await g.click('[data-act="primary"]'), await g.sleep(700), await dots() === '' && (await gs()).rd === 2), await dots());
-        await g.ev('window.OBRX._dev.drag("t2","t3")'); await g.sleep(500);
-        await g.click('[data-act="atkno"]'); await g.sleep(300);
-        await g.ev('window.confirm=function(){return true}');
+        check('combat 6: typing -99 on Goblin 1 makes it dead: the row is greyed "dead", its number becomes "x", its pair is dropped, the casualty line and the 25% morale reminder show', await g.ev('document.querySelector(".cmhp tr.dead")&&/dead/.test(document.querySelector(".cmhp tr.dead").innerText)') && cs.pr.length === 1 && await g.ev('Array.from(document.querySelectorAll("#dev-map .dev-dot")).map(function(d){return d.textContent}).sort().join()').then(t => /x/.test(t)) && /Foes down: 1 of 3 \(33%\)/.test(await g.ev('document.getElementById("c-run").innerText')) && /25% lost: morale \+5/.test(await g.ev('document.getElementById("c-run").innerText')));
+        const g2 = await g.ev('window.OBRX.scene.items.getItems().then(function(a){return a.filter(function(i){return i.name==="Goblin 2"})[0].id})'), h2a = (await hps()).filter(x => x[0] === 'Goblin 2')[0][1];
+        await g.ev('(function(){var a=document.querySelector("[data-hp=\\"' + g2 + '\\"]");a.value="+3";a.dispatchEvent(new Event("change",{bubbles:true}))})()'); await g.sleep(900);
+        const h2b = (await hps()).filter(x => x[0] === 'Goblin 2')[0][1];
+        check('combat 6: "+3" adds hit points (the maximum stays); a plain number sets them; the number on the token follows', h2b[0] === h2a[0] + 3 && h2b[1] === h2a[1] && await g.ev('Array.from(document.querySelectorAll("#dev-map .dev-dot")).some(function(d){return d.textContent==="' + (h2a[0] + 3) + '"})'));
+        await g.ev('(function(){var a=document.querySelector("[data-hp=\\"' + g2 + '\\"]");a.value="5";a.dispatchEvent(new Event("change",{bubbles:true}))})()'); await g.sleep(700);
+        check('combat 6: PCs have no hit-point row (their sheet keeps them)', (await hps()).filter(x => x[0] === 'Goblin 2')[0][1][0] === 5 && !/Aldric|Brenna/.test(await g.ev('document.querySelector(".cmhp").innerText')));
+        await shotBoth(g, 'hp-list', { full: true }, 'combat-6-');
+        // spell rounds
+        await g.ev('document.getElementById("cm-spl").open=true'); await g.sleep(100);
+        await g.ev('(function(){document.querySelector("[data-spn=\\"0\\"]").value="Web";document.querySelector("[data-spr=\\"0\\"]").value="2"})()'); await g.click('[data-act="spadd"][data-k="0"]'); await g.sleep(500);
+        check('combat 6: "+ spell" on a PC row keeps name and rounds left', /Web: 2 left/.test(await g.ev('document.getElementById("c-run").innerText')));
+        await g.click('[data-act="next"]'); await g.sleep(500);
+        check('combat 6: Next round counts it down (1 left), moves this round\'s hits to "last round" and clears the tally and initiative', /Web: 1 left/.test(await g.ev('document.getElementById("c-run").innerText')) && (await gs()).rd === 2 && (await gs()).lh.join() === '2,1' && (await gs()).ht.join() === '0,0' && (await gs()).w === -1 && /last round 2/.test(await g.ev('document.querySelector(".cmhits").innerText')) && await g.ev('document.querySelector(".cminit").innerText') === '');
+        await g.click('[data-act="next"]'); await g.sleep(500);
+        check('combat 6: at 0 a one-line notice tells the GM the spell has run out', /Web \(Aldric \(your token\)\) has run out/.test(await g.ev('document.querySelector(".cmnote").innerText')) && !/Web:/.test(await g.ev('document.getElementById("c-run").innerText')));
+        for (let i = 0; i < 8; i++) { await g.click('[data-act="next"]'); await g.sleep(250); }
+        check('combat 6: the turn rolls over every 10 rounds: round 11 is Turn 2, round 1 of 10 (PHB p.39)', (await gs()).rd === 11 && /Round 11/i.test(await g.ev('document.querySelector(".cmrd").innerText')) && /Turn 2/i.test(await g.ev('document.querySelector(".cmrd").innerText')) && /round 1 of 10/i.test(await g.ev('document.querySelector(".cmrd").innerText')));
+        // pairs persist across rounds
+        check('combat 6: the remaining pair persists across rounds', (await gs()).pr.length === 1);
         await g.click('[data-act="end"]'); await g.sleep(700);
-        check('dots: End combat leaves no dots', await g.ev('!document.getElementById("dev-map")'));
-        await g.ev('window.OBRX.scene.items.updateItems(["t2"],function(d){delete d[0].metadata["io.github.solid-state-games.1e-toolkit/sheet"];delete d[0].metadata["io.github.solid-state-games.1e-toolkit/cs"]});window.OBRX.scene.items.updateItems(["t3"],function(d){d[0].name="Goblin NPC (GM token)";delete d[0].metadata["io.github.solid-state-games.1e-toolkit/cs"]})'); await g.sleep(300);
+        hp = await hps();
+        check('combat 6: End combat clears pairs, hits, spells and the labels; the monsters keep their hit points on their tokens; the scene has no combat keys', await keys().then(k => k.length === 0) && await g.ev('!document.getElementById("dev-map")') && hp.every(x => x[1]) && hp.filter(x => x[0] === 'Goblin 1')[0][1][0] <= 0);
+        await g.ev('(function(){var s=JSON.parse(localStorage.getItem("toolkit-dev-scene"));s.items=s.items.filter(function(i){return !/^Goblin [23]$/.test(i.name)});s.items.forEach(function(i){delete i.metadata["' + NSK + '/cs"];if(i.id==="t2")delete i.metadata["' + NSK + '/sheet"];if(i.id==="t3")i.name="Goblin NPC (GM token)"});localStorage.setItem("toolkit-dev-scene",JSON.stringify(s))})()'); await g.sleep(500);
         await g.click('[data-tab="sheets"]');
     }
     {   // the action popover follows its content height
