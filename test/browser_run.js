@@ -336,7 +336,7 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
         // round bar and surprise (unchanged)
         await g.click('[data-act="init"]'); await g.sleep(400);
         const it = await g.ev('document.querySelector(".cminit").innerText');
-        check('combat 7: one Roll initiative button gives "Party n, Foes m: ... goes first" (or the tie note); no phases', /^Party [1-6], Foes [1-6]: (Party goes first|Foes goes first|tie, both sides act together)$/.test(it), it);
+        check('combat 7: one Roll initiative button gives "Party n, Foes m: ... goes first" (or the tie note); no phases', /^Party [1-6], Foes [1-6]: (Party goes first|Foes go first|tie, both sides act together)$/.test(it), it);
         await g.ev('document.getElementById("cm-sur").open=true'); await g.sleep(150);
         await g.ev('(function(){var a=document.querySelector("[data-sd=\\"0\\"]");a.value=1;a.dispatchEvent(new Event("change",{bubbles:true}))})()'); await g.sleep(300);
         await g.ev('(function(){var a=document.querySelector("[data-sd=\\"1\\"]");a.value=2;a.dispatchEvent(new Event("change",{bubbles:true}))})()'); await g.sleep(400);

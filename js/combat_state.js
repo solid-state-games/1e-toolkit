@@ -57,7 +57,7 @@ const CombatState = (function () {
     function initText(c) {
         if (c.w < 0) return "";
         const sc = c.sd[0].n + " " + c.sd[0].in + ", " + c.sd[1].n + " " + c.sd[1].in;
-        return sc + (c.w === 2 ? ": tie, both sides act together" : ": " + c.sd[c.w].n + " goes first");
+        return sc + (c.w === 2 ? ": tie, both sides act together" : ": " + c.sd[c.w].n + (/s$/i.test(c.sd[c.w].n) ? " go first" : " goes first"));
     }
 
     /* ----- rounds and turns: 1 round = 1 minute, 1 turn = 10 rounds (PHB p.39) ----- */
