@@ -30,10 +30,9 @@ window.startToolkit = async function () {
     OBR.onReady(async function () {
         try {
             TK.role = await OBR.player.getRole(); TK.me = await OBR.player.getId(); TK.name = await OBR.player.getName();
-            document.body.classList.add(TK.role === "GM" ? "role-gm" : "role-player", TK.view === "sheet" ? "view-sheet" : TK.view === "banner" ? "view-banner" : "view-hub");
+            document.body.classList.add(TK.role === "GM" ? "role-gm" : "role-player", TK.view === "sheet" ? "view-sheet" : "view-hub");
             if (TK.dev) document.body.classList.add("dev");
-            if (TK.view === "banner") await CombatUI.bannerStart();
-            else if (TK.view === "sheet") await SheetUI.start(q.get("item"));
+            if (TK.view === "sheet") await SheetUI.start(q.get("item"));
             else await Hub.start();
         } catch (e) { console.error(e); $("app").innerHTML = '<div class="notice"><h2>Something went wrong</h2><p>' + esc(e.message) + "</p></div>"; }
     });
@@ -58,19 +57,19 @@ const Hub = (function () {
         TK.OBR.scene.items.onChange(function () { refreshItems(); });
         show(tab);
         fitHeight();
-        CombatUI.boot();
+        if (TK.role === "GM") CombatUI.boot();   // players see nothing of combat
     }
     function shell() {
-        const tabs = [["sheets", "Characters"]].concat(TK.role === "GM" ? GM_TABS : [["cbt", "Combat"]]).concat([["guide", "Guide"]]);
+        const tabs = [["sheets", "Characters"]].concat(TK.role === "GM" ? GM_TABS : []).concat([["guide", "Guide"]]);
         let h = '<header class="hubhead"><h1>1e Character Sheet</h1><span><span class="rolebadge">' + (TK.role === "GM" ? "GM" : "Player") + '</span>' + tkGear("hub") + '</span></header>';
-        h += '<nav class="tabs" role="tablist">' + tabs.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '">' + (t[0] === "com" || t[0] === "cbt" ? '<i class="ic ic-sword" aria-hidden="true"></i>' : "") + t[1] + "</button>"; }).join("") + "</nav>";
+        h += '<nav class="tabs" role="tablist">' + tabs.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '">' + (t[0] === "com" ? '<i class="ic ic-sword" aria-hidden="true"></i>' : "") + t[1] + "</button>"; }).join("") + "</nav>";
         h += '<section id="sheets" class="pane"></section>';
-        if (TK.role === "GM") h += '<section id="enc" class="pane"></section><section id="tre" class="pane"></section><section id="com" class="pane"></section>'; else h += '<section id="cbt" class="pane"></section>';
+        if (TK.role === "GM") h += '<section id="enc" class="pane"></section><section id="tre" class="pane"></section><section id="com" class="pane"></section>';
         h += '<section id="guide" class="pane"><p>The setup guide explains installing the extension, adding it to a room, linking a token to a sheet and moving a character between rooms.</p><p><a class="btn" href="guide.html" target="_blank" rel="noopener">Open the setup guide</a></p></section>';
         h += '<footer class="credit">' + esc(CREDIT) + "</footer>";
         $("app").innerHTML = h;
         document.querySelector(".tabs").addEventListener("click", function (e) { const b = e.target.closest("[data-tab]"); if (b) show(b.dataset.tab); });
-        if (TK.role === "GM") { Enc.init($("enc")); Tre.init($("tre")); Com.init($("com")); CombatUI.initGm($("c-run")); } else CombatUI.initPlayer($("cbt"));
+        if (TK.role === "GM") { Enc.init($("enc")); Tre.init($("tre")); Com.init($("com")); CombatUI.initGm($("c-run")); }
     }
     // The popover is as tall as its content (200 px up to a cap, then it scrolls). Cap = 760 px and never past the bottom of the screen:
     // the viewport height less the popover's top offset (64) and a margin (40). OBR.action.setHeight, OBR.viewport.getHeight; width stays as the manifest says.

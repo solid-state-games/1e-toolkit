@@ -541,236 +541,84 @@ if (fs.existsSync(path.join(root, '..', '..', '..', 'ADD-BOOKS-PDF', 'TEXT'))) {
 }
 
 
-// ---- (j) combat mode, step 1: state, surprise, initiative, phases, log (COMBAT_SPEC 8.2, 8.3, 9; DMG p.61-63)
+// ---- (n) simple combat (TB 2026-11-16): state, surprise words, initiative, rounds and turns, pairs, to-hit both ways, hits and morale flag, hit points, casualties, spells
 {
-    const CS = G('CombatState'), uuid = i => ('00000000-0000-4000-8000-' + String(i).padStart(12, '0'));
-    const ids = Array.from({ length: 40 }, (_, i) => uuid(i)), side = ids.map((_, i) => i < 6 ? 0 : 1);
-    const mk = () => CS.create(ids, side, ['Party', 'Goblins'], [2, 2]);
-    let c = mk();
-    check('(j) combat state has the spec 8.2 shape (v, on, rd, ph, sg, op, sd[], w, ro[]) and stays under the key namespace', ['v', 'on', 'rd', 'ph', 'sg', 'op', 'sd', 'w', 'ro'].every(k => k in c) && c.sd.length === 2 && c.ro.length === 40 && c.sd[0].m.length === 6 && c.sd[1].m.length === 34 && CS.KEY === 'io.github.solid-state-games.1e-toolkit/combat' && CS.KEY === SR.NS + '/combat');
-    check('(j) all restrictions at their section 9 defaults when op is 0 (declare off, the rest on); one bit per toggle; switching round-trips', !CS.isOn(c, 'cm.declare') && CS.isOn(c, 'cm.surprise') && CS.isOn(c, 'cm.phase-order') && (CS.setToggle(c, 'cm.declare', true), CS.isOn(c, 'cm.declare') && c.op === 2) && (CS.setToggle(c, 'cm.initiative', false), !CS.isOn(c, 'cm.initiative') && c.op === 66) && (CS.setToggle(c, 'cm.declare', false), CS.setToggle(c, 'cm.initiative', true), c.op === 0) && CS.TOGGLES.every(t => t.b < 31));
-    // surprise cells: every roll pair against ranges 1 to 6 equals the text reading (DMG p.61-62, ruling A1), and 1 vs 2 is one segment for the higher roller
+    const CS = G('CombatState'), CA = G('CombatAttack'), GC = G('GMCombat'), W = n => G('WEAPONS').filter(w => w.name === n)[0], uuid = i => '00000000-0000-4000-8000-' + String(i).padStart(12, '0');
+    const mk = (sd) => CS.create(['a', 'b', 'c'], sd || [0, 1, 1], ['Party', 'Goblins'], [2, 2]);
+    const ids = Array.from({ length: 40 }, (_, i) => uuid(i)), big = CS.create(ids, ids.map((_, i) => i < 6 ? 0 : i < 38 ? 1 : 2), ['Party', 'Goblins'], [2, 2]);
+    for (let i = 0; i < 12; i++) CS.addPair(big, i, 10 + i); for (let i = 0; i < 4; i++) CS.addSpell(big, i, 'Hold Person', 6);
+    check('(n) combat state: v2 shape, the roster stored once, a 40-token roster with 12 pairs and 4 spells stays well under 14 kB (about ' + JSON.stringify(big).length + ' B)', ['v', 'on', 'rd', 'tn', 'w', 'ro', 'nf', 'sd', 'pr', 'ht', 'lh', 'sp'].every(k => k in big) && big.v === 2 && JSON.stringify(big).length < 4500 && CS.KEY === SR.NS + '/combat' && CS.CS === SR.NS + '/cs');
+    let c = mk(); CS.addPair(c, 0, 1); CS.addPair(c, 0, 2); CS.moveToken(c, 1, 2);
+    check('(n) sides: Not fighting is in the roster but in no side; moving a token to it drops its pairs; any number of sides works', c.nf.join() === '1' && c.pr.length === 1 && CS.fighters(c).join() === '0,2' && CS.sideOf(c, 1) === 2 && (() => { const t = CS.create(['a', 'b', 'c', 'd'], [0, 1, 2, 3], ['A', 'B', 'C'], [2, 2, 2]); return t.sd.length === 3 && t.nf.join() === '3' && (CS.moveToken(t, 3, 0), CS.sideOf(t, 3) === 0); })());
+    const meta0 = {}, p0 = CS.sidesPatch(meta0, ['x', 'y'], 1), inC = {}; inC[CS.KEY] = mk(); const p1 = CS.sidesPatch(inC, ['a', 'new1'], 1);
+    check('(n) right-click sides: before combat the choice goes in `pre`; in combat tokens move and tokens not in the roster are added (original untouched)', p0[CS.PRE].x === 1 && !(CS.KEY in p0) && p1[CS.KEY].sd[1].m.join() === '0,1,2,3' && p1[CS.KEY].ro.length === 4 && inC[CS.KEY].ro.length === 3);
+    // pairs
+    c = mk(); const ok1 = CS.addPair(c, 0, 1), dup = CS.addPair(c, 1, 0), self = CS.addPair(c, 2, 2); CS.moveToken(c, 2, 2); const nfp = CS.addPair(c, 0, 2);
+    const meta = {}; meta[CS.KEY] = mk(); const pp = CS.pairPatch(meta, 'a', 'b'), mm = CS.pairPatch(meta, 'a', 'zz'), nm = CS.pairPatch({}, 'a', 'b');
+    check('(n) pairs: added once (either direction counts), never with itself or a token that is not fighting; the tool path gives a patch or a one-line reason', ok1 && !dup && !self && !nfp && c.pr.length === 1 && pp.patch[CS.KEY].pr.length === 1 && /must be in the combat/.test(mm.msg) && /Start combat/.test(nm.msg) && meta[CS.KEY].pr.length === 0);
+    c = mk(); CS.addPair(c, 0, 1); CS.addPair(c, 0, 2); CS.dropDown(c, [1]);
+    check('(n) a token that is down takes its pairs away, other pairs stay', c.pr.length === 1 && c.pr[0][1] === 2);
+    // surprise words
     let bad = 0;
     for (let ra = 0; ra <= 6; ra++) for (let rb = 0; rb <= 6; rb++) for (let a = 1; a <= 6; a++) for (let b = 1; b <= 6; b++) {
-        const x = CS.create(['a', 'b'], [0, 1], ['A', 'B'], [ra, rb]);
-        if (ra) CS.rollSurprise(x, 0, a); if (rb) CS.rollSurprise(x, 1, b);
-        if (!ra && !rb) CS.resolveSurprise(x);
-        const sa = ra && a <= ra ? a : 0, sb = rb && b <= rb ? b : 0, d = sa - sb;
-        if (x.sd[0].sl !== Math.max(0, d) || x.sd[1].sl !== Math.max(0, -d)) bad++;
+        const x = CS.create(['a', 'b'], [0, 1], ['A', 'B'], [ra, rb]); if (ra) CS.setSurprise(x, 0, a); if (rb) CS.setSurprise(x, 1, b);
+        const sa = ra && a <= ra ? a : 0, sb = rb && b <= rb ? b : 0, d = sa - sb, got = CS.surpriseSegs(x);
+        if (got[0] !== Math.max(0, d) || got[1] !== Math.max(0, -d)) bad++;
     }
-    check('(j) surprise: 2401 range and roll cells match the DMG p.61-62 text (segments lost = the surprised side\'s die, both surprised subtract, equal = none)', bad === 0, bad + ' wrong');
-    let s = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.rollSurprise(s, 0, 1); CS.rollSurprise(s, 1, 2);
-    check('(j) surprise 1 vs 2 (both surprised): the side that rolled 2 loses 1 segment, the side that rolled 1 loses none; banner bars the surprised side', s.sd[0].sl === 0 && s.sd[1].sl === 1 && s.sg === 1 && CS.barred(s, 1) && !CS.barred(s, 0) && /Party acts\. Goblins cannot act/.test(CS.banner(s).b));
-    s = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.rollSurprise(s, 1, 2); CS.rollSurprise(s, 0, 5);
-    check('(j) surprise 2 vs 5 (only the 2 is in range): the 2-side loses 2 segments, then round 1', s.sd[1].sl === 2 && s.sd[0].sl === 0 && CS.advance(s).ok && s.sg === 2 && CS.advance(s).ok && s.rd === 1 && s.sg === 0);
-    // DEX reaction per individual (S03, PHB p.11 Table I): 16 +1, 17 +2, 18 +3, 6 to 15 none, 3 -3
-    const dx = d => CS.indivSegs(s0, 0, d), s0 = CS.create(['a', 'b'], [0, 1], ['P', 'F'], [2, 2]);
-    CS.rollSurprise(s0, 0, 4); CS.rollSurprise(s0, 1, 6); s0.sd[0].ra = 4; CS.resolveSurprise(s0);
-    check('(j) surprise DEX: 3 segments lost becomes 3 (DEX 10), 2 (16), 1 (17), 0 (18), 6 (DEX 3); an unsurprised side stays 0; switch off ignores DEX', s0.sd[0].sl === 4 && s0.sd[1].sl === 0 && dx(10) === 4 && dx(16) === 3 && dx(17) === 2 && dx(18) === 1 && dx(3) === 7 && CS.indivSegs(s0, 1, 3) === 0 && (CS.setToggle(s0, 'cm.surprise-dex', false), dx(18) === 4));
-    check('(j) a range of 0 (prior detection, S04) needs no roll and surprises nobody; skip goes to round 1', (() => { const k = CS.create(['a', 'b'], [0, 1], ['P', 'F'], [0, 0]); const ok = CS.resolveSurprise(k) && CS.maxSl(k) === 0 && CS.advance(k).ok && k.rd === 1; const k2 = CS.create(['a', 'b'], [0, 1], ['P', 'F'], [2, 2]); const stop = !CS.advance(k2).ok; CS.skipSurprise(k2); return ok && stop && k2.rd === 1; })());
-    // phase order: round 0, then declare (if on), initiative, first side, second side, end, next round (R02, I02)
-    let p = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.skipSurprise(p);
-    const trail = []; CS.rollInit(p, 0, 5); CS.rollInit(p, 1, 2);
-    for (let i = 0; i < 6; i++) { trail.push(p.rd + ':' + p.ph + ':' + CS.banner(p).b); CS.advance(p); }
-    check('(j) phase order: initiative, winner acts, other side acts, end of round, then round 2 starts with fresh initiative', trail.slice(0, 5).join(' | ') === '1:1:Rolling initiative | 1:2:Party acts | 1:3:Goblins act | 1:4:End of round | 2:1:Rolling initiative' && p.rd === 2 && p.sd[0].in === 0 && p.w === -1, trail.join(' | '));
-    p = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.skipSurprise(p);
-    check('(j) cannot leave initiative until both sides have rolled; the lower roller goes second', !CS.advance(p).ok && (CS.rollInit(p, 0, 2), !CS.advance(p).ok) && CS.rollInit(p, 1, 6) === 1 && CS.advance(p).ok && CS.banner(p).b === 'Goblins act' && (CS.advance(p), CS.banner(p).b === 'Party acts'));
-    p = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.skipSurprise(p); CS.rollInit(p, 0, 4); CS.rollInit(p, 1, 4); CS.advance(p);
-    check('(j) tied initiative is simultaneous: one "both sides act" phase, then end of round; the A23 tie note is there', p.w === 2 && /together \(tie\)/.test(CS.banner(p).b) && CS.advance(p).ok && p.ph === 4 && /longer weapon/.test(CS.TIE_NOTE) && /lower speed factor/.test(CS.TIE_NOTE));
-    p = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.setToggle(p, 'cm.declare', true); CS.skipSurprise(p);
-    const dtr = [p.ph]; CS.advance(p); dtr.push(p.ph);
-    CS.setToggle(p, 'cm.initiative', false); CS.setFirst(p, 1); CS.setToggle(p, 'cm.phase-order', false); CS.advance(p); dtr.push(p.ph); const anyB = CS.banner(p).b; CS.advance(p); dtr.push(p.ph);
-    check('(j) declare step only when switched on (0 then 1); initiative off lets the GM pick; side order off skips the second-side phase', dtr.join('') === '0124' && anyB === 'Goblins has initiative. Sides act in any order');
-    check('(j) round counter switch: banner says Combat, not a round number, when off', (() => { const k = mk(); CS.skipSurprise(k); const a = CS.banner(k).a; CS.setToggle(k, 'cm.rounds', false); return a === 'Round 1' && CS.banner(k).a === 'Combat'; })());
-    // size with a 40-token roster, 13 rounds of 40 log entries, folded as 8.3 says
-    const logs = {}, sum = []; let big = mk(); CS.skipSurprise(big);
-    let maxB = 0, folded = 0;
-    for (let r = 1; r <= 13; r++) {
-        big.rd = r; for (let e = 0; e < 40; e++) CS.logAdd(logs, r, [e % 10, e % 2 ? 2 : 0, e % 40, (e + 7) % 40, 14, 12, 6, 30, 3]);
-        folded += CS.fold(big, logs, sum).length; maxB = Math.max(maxB, CS.bytesOf(big, logs, sum));
-    }
-    check('(j) metadata size: combat with a 40-token roster alone is small, and 13 busy rounds with the fold stay under 14 kB', CS.bytesOf(mk(), {}, []) < 3500 && maxB <= 14000 && folded >= 7, 'combat ' + CS.bytesOf(mk(), {}, []) + ' B, peak ' + maxB + ' B, ' + folded + ' folded');
-    check('(j) log fold: rounds older than the last 6 become [round, winner, 0,0,0,0] lines in log/s, oldest first; the current round is never folded', sum.length === folded && sum.every((x, i) => x.length === 6 && (i === 0 || x[0] > sum[i - 1][0])) && logs[13] && Object.keys(logs).length <= 6);
-    const fl = {}, fs = [], fc = mk(); CS.skipSurprise(fc); CS.logAdd(fl, 1, CS.entry(0, 0, 0, 5, 0, 0)); CS.logAdd(fl, 1, CS.entry(0, 0, 1, 2, 0, 0)); fc.rd = 8; CS.logAdd(fl, 8, CS.entry(0, 0, 0, 1, 0, 0));
-    const rem = CS.fold(fc, fl, fs);
-    check('(j) a folded round keeps its initiative winner; the patch deletes the folded key (undefined) and writes the summary', rem.join() === '1' && fs[0].join() === '1,0,0,0,0,0' && (() => { const pt = CS.patch(fc, fl, fs, rem); return 'io.github.solid-state-games.1e-toolkit/log/1' in pt && pt['io.github.solid-state-games.1e-toolkit/log/1'] === undefined && Array.isArray(pt['io.github.solid-state-games.1e-toolkit/log/s']); })());
-    // log entries: kind 0 initiative, 1 surprise; the source is kept; export reads as text; clear removes our keys only
-    const lg = {}, lc = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.logAdd(lg, 0, CS.entry(0, 1, 0, 1, 2, 2)); CS.logAdd(lg, 1, CS.entry(0, 0, 1, 4, 0, 1));
-    const txt = CS.exportText(lc, lg, [], n => 'tok' + n);
-    check('(j) log entries record kind and source; the export is plain text with sides, surprise segments and rounds', /Party rolled 1 for surprise, surprised on 1 to 2 \(Owlbear Dice tray\)/.test(txt) && /Goblins rolled 4 for initiative \(physical die typed in\)/.test(txt) && /Surprise segments/.test(txt) && /Round 1/.test(txt) && /Party \(tok0\) \| Goblins \(tok1\)/.test(txt));
-    const meta = { other: 1 }; meta[CS.KEY] = lc; meta[CS.LOGP + '0'] = lg[0]; const clr = CS.clearPatch(meta), rd = CS.read(meta);
-    check('(j) read gives back the state and logs; clear unsets our keys and leaves other keys alone', rd.c && rd.logs[0].length === 1 && Object.keys(clr).length === 2 && !('other' in clr) && Object.values(clr).every(v => v === undefined) && CS.read({}).c === null);
-    check('(j) an old scene with no combat key reads as no combat; the banner never says undefined or NaN', CS.read({ a: 1 }).c === null && (() => { const k = mk(); const all = []; for (let i = 0; i < 12; i++) { all.push(CS.banner(k).a + CS.banner(k).b); CS.rollInit(k, 0, 3); CS.rollInit(k, 1, 4); CS.advance(k); } return !BAD.test(all.join(' ')); })());
-}
-
-
-// ---- (k) combat mode, rework: one-button steps, undo, tray, who rolls, Not fighting, derived surprise ranges, earlier surprise
-{
-    const CS = G('CombatState'), mk = (sd) => CS.create(['a', 'b', 'c'], sd || [0, 1, 1], ['Party', 'Goblins'], [2, 2]);
-    // the whole round on one button
-    let c = mk(), lg = {}; const labels = [];
-    const go = (v, src) => { labels.push(CS.primary(c)); return CS.step(c, lg, v, src || 0, []); };
-    const r0 = go([]);
-    go([1, 2]);   // surprise: Goblins lose 1
-    go(); go([5, 2]); go(); go(); go(); go();
-    check('(k) one button per step: roll surprise, the surprised side\'s segment, roll initiative, each side acts, next round', !r0.ok && r0.need.join() === '0,1' && labels.join(' | ') === 'Roll surprise | Roll surprise | Party acts: done | Roll initiative | Party acts: done | Goblins act: done | Next round | Roll initiative' && c.rd === 2 && c.ph === 1 && c.sd[0].in === 0, labels.join(' | '));
-    check('(k) a step that needs dice refuses to move without them, and a rolled step moves on by itself (initiative lands on first side acts)', (() => { const k = mk(); CS.skipSurprise(k); const a = CS.step(k, {}, [], 0, []); const b = CS.step(k, {}, [4, 1], 0, []); return !a.ok && b.ok && k.ph === 2 && k.w === 0; })());
-    const sl = (() => { const k = mk(); CS.rollSurprise(k, 0, 1); CS.rollSurprise(k, 1, 2); return CS.stepList(k).map(x => x.k + ':' + x.st).join(); })();
-    check('(k) step list: surprise done with its result, segment current; round 1 list is initiative, first side, second side, end, current one marked', sl === 'sur:done,seg:cur,r1:todo' && (() => { const k = mk(); CS.skipSurprise(k); CS.step(k, {}, [5, 2], 0, []); const L = CS.stepList(k); return L.map(x => x.st).join() === 'done,cur,todo,todo' && L[0].res === 'Party wins (5 to 2)' && L[1].label === 'Party acts' && L[2].label === 'Goblins act'; })() && CS.stepList((() => { const k = mk(); CS.rollSurprise(k, 0, 1); CS.rollSurprise(k, 1, 2); return k; })())[0].res === 'Goblins lose 1', sl);
-    // undo (persisted stack): snapshot before, pushUndo after
-    c = mk(); lg = {}; let st = []; CS.skipSurprise(c); let b4 = CS.takeSnap(c, lg); CS.step(c, lg, [3, 6], 0, []); CS.pushUndo(st, b4, lg, 'Roll initiative'); const logged = (lg[1] || []).length;
-    CS.undo(c, lg, st);
-    check('(k) undo puts back the step fields, drops the log lines the step added and logs a kind 9 entry', c.ph === 1 && c.w === -1 && c.sd[0].in === 0 && logged === 3 && lg[1].length === 1 && lg[1][0][1] === 9 && /GM undid: Roll initiative/.test(CS.entryText(lg[1][0], c)) && CS.visible(lg[1]).length === 1 && st.length === 0);
-    c = mk(); lg = {}; st = []; CS.skipSurprise(c); b4 = CS.takeSnap(c, lg); CS.step(c, lg, [3, 6], 0, []); CS.pushUndo(st, b4, lg, 'Roll initiative'); c.ph = 4; b4 = CS.takeSnap(c, lg); CS.step(c, lg, [], 0, []); CS.pushUndo(st, b4, lg, 'Next round'); b4 = CS.takeSnap(c, lg); CS.step(c, lg, [2, 1], 0, []); CS.pushUndo(st, b4, lg, 'Roll initiative');
-    const reload = JSON.parse(JSON.stringify(st)), r1 = CS.undo(c, lg, reload), r2 = CS.undo(c, lg, reload);
-    check('(k) undo survives a reload (the stack is plain JSON) and walks back several steps, across a round change, reporting the later round\'s key as removed', r1.label === 'Roll initiative' && r2.label === 'Next round' && r2.removed.join() === '2' && c.rd === 1 && c.ph === 4 && !lg[2] && reload.length === 1);
-    // back into surprise
-    c = mk(); lg = {}; st = []; b4 = CS.takeSnap(c, lg); CS.step(c, lg, [1, 2], 0, []); CS.pushUndo(st, b4, lg, 'Roll surprise'); b4 = CS.takeSnap(c, lg); CS.step(c, lg, [], 0, []); CS.pushUndo(st, b4, lg, 'Party acts: done');
-    CS.undo(c, lg, st); const mid = c.rd === 0 && c.sg === 1; CS.undo(c, lg, st);
-    check('(k) undo walks from round 1 back into the surprise segment and on to before the surprise roll', mid && c.rd === 0 && c.sg === 0 && c.sd[0].sr === 0 && c.sd[1].sl === 0 && !CS.surpriseReady(c) && lg[0].filter(e => e[1] !== 9).length === 0);
-    // stack cap 20 and the size ceiling
-    c = mk(); lg = {}; st = []; CS.skipSurprise(c);
-    for (let i = 0; i < 30; i++) { b4 = CS.takeSnap(c, lg); CS.step(c, lg, c.ph === 1 ? [3, 2] : [], 0, []); CS.pushUndo(st, b4, lg, 'step ' + i); }
-    check('(k) the undo stack keeps the last 20 steps', st.length === 20 && st[19].l === 'step 29' && st[0].l === 'step 10');
-    const cz = mk(); CS.skipSurprise(cz); cz.rd = 12; const lz = {}, sz = [];
-    for (let r = 10; r <= 12; r++) for (let e = 0; e < 40; e++) CS.logAdd(lz, r, [e % 10, 2, e % 40, (e + 7) % 40, 14, 12, 6, 30, 3, 'Aldric attacks Goblin 3: rolled 14, needs 12: hit']);
-    for (let i = 0; i < 20; i++) sz.push(JSON.parse(JSON.stringify(st[19])));
-    const noStack = CS.bytesOf(cz, lz, []), withStack = CS.bytesOf(cz, lz, [], sz), cap = noStack + 500, before = sz.length;
-    CS.fold(cz, lz, [], cap, sz);
-    check('(k) over the size ceiling the oldest undo steps are dropped first; the current round\'s log is never touched and no round is folded while undo steps can go', sz.length < before && sz.length > 0 && CS.bytesOf(cz, lz, [], sz) <= cap && withStack > cap && lz[12].length === 40 && lz[10] && lz[11]);
-    const cy = mk(); CS.skipSurprise(cy); const ly = {}, sy = []; for (let e = 0; e < 40; e++) CS.logAdd(ly, 1, [0, 2, 0, 1, 14, 12, 6, 30, 3, 'x'.repeat(40)]);
-    for (let i = 0; i < 20; i++) sy.push(JSON.parse(JSON.stringify(st[19])));
-    CS.fold(cy, ly, [], 3000, sy);
-    check('(k) with the ceiling too tight even for the current log, undo goes entirely before the current round is touched', sy.length === 0 && ly[1].length === 40);
-    check('(k) patch carries the stack in its own key and clears it when empty; clearing combat removes it and `pre`', (st.length || st.push({ l: 'x', rd: 1, ph: 1, sg: 0, w: -1, s: [[0, 0, 0], [0, 0, 0]], n: 0, k: 0 })) && CS.patch(c, lg, [], [], st)[CS.UNDO].length === st.length && CS.patch(c, lg, [], [], [])[CS.UNDO] === undefined && (() => { const m = {}; m[CS.KEY] = c; m[CS.UNDO] = st; m[CS.PRE] = {}; m.other = 1; const k = CS.clearPatch(m); return k[CS.UNDO] === undefined && CS.UNDO in k && CS.PRE in k && !('other' in k); })() && CS.read((() => { const m = {}; m[CS.KEY] = c; m[CS.UNDO] = st; return m; })()).undo.length === st.length);
-    // replaced rolls are hidden
-    check('(k) the shown log keeps only the last roll a side made for a kind', CS.visible([CS.entry(0, 0, 0, 2, 0, 0), CS.entry(0, 0, 1, 3, 0, 0), CS.entry(0, 0, 0, 6, 0, 0)]).map(e => e[4]).join() === '3,6');
-    check('(k) a step that logs into round 0 as round 1 starts (no surprise) still reaches the stored patch', (() => { const k = mk(), l = {}; CS.noSurprise(k, l); const pt = CS.patch(k, l, [], []); return k.rd === 1 && Array.isArray(pt[CS.LOGP + '0']); })());
-    // tray: stale value ignored, first new value from an allowed roller taken, other-side roller ignored
-    const md = (v, n) => ({ 'rodeo.owlbear.dice/rollValues': v, 'rodeo.owlbear.dice/roll': { n } });
-    const P = (a, b, g) => [{ id: 'gm', name: 'GM', metadata: g || {} }, { id: 'p1', name: 'Sam', metadata: a || {} }, { id: 'p2', name: 'Kim', metadata: b || {} }];
-    let base = CS.traySnap(P(md([4], 1), md([6], 1)));
-    check('(k) tray: a roll already in the tray when the step asks is stale and never taken', CS.trayPick(base, P(md([4], 1), md([6], 1)), [['p1']]) === null);
-    let pk = CS.trayPick(base, P(md([4], 2), md([6], 1)), [['p1']]);
-    check('(k) tray: the first new single d6 is taken, even when it repeats the old number, and says who rolled it', pk && pk.value === 4 && pk.name === 'Sam' && pk.j === 0 && CS.trayPick(base, P(md([4], 2), md([6], 1)), [['p1']]) === null);
-    base = CS.traySnap(P(md([1], 1), md([1], 1), md([1], 1)));
-    check('(k) tray: a roll from a player who may not roll for that side is ignored (Foes: GM only; Party: its owners only)', CS.trayPick(base, P(md([5], 9), md([1], 1), md([1], 1)), [['gm']]) === null && (base = CS.traySnap(P(md([1], 1), md([1], 1), md([1], 1))), CS.trayPick(base, P(md([1], 1), md([4], 8), md([1], 1)), [['p1'], ['gm']]) === null) && (base = CS.traySnap(P(md([1], 1), md([1], 1), md([1], 1))), CS.trayPick(base, P(md([1], 1), md([1], 1), md([2], 7)), [['p1']]) === null));
-    base = CS.traySnap(P(md([1], 1), md([1], 1), md([1], 1)));
-    pk = CS.trayPick(base, P(md([1], 1), md([3], 5), md([2], 6)), [['p1'], ['gm']]);
-        base = CS.traySnap(P({}, {}, {}));
-    const t1 = CS.trayPick(base, P(md([3], 1), {}, md([6], 1)), [['p1', 'p2'], ['gm']]), w2 = [['p1', 'p2'], ['gm']]; w2[t1.j] = null; const t2 = CS.trayPick(base, P(md([3], 1), {}, md([6], 1)), w2);
-    check('(k) tray: parallel needs: a Party roll fills need 0, the GM roll fills need 1; two dice or a d8 result is no d6', t1 && t2 && [t1, t2].some(x => x.j === 0 && x.value === 3) && [t1, t2].some(x => x.j === 1 && x.value === 6) && CS.dieOf(md([3, 4], 1)) === null && CS.dieOf(md([8], 1)) === null && CS.dieOf(md([{ value: 5 }], 1)) === 5);
-    // rollerFor
-    const own = ['p1', 'p2', ''], cc = mk();
-    check('(k) rollerFor: a side with player-owned tokens is rolled by those owners, a side with none by the GM, a token by its owner else the GM', CS.rollerFor(cc, own, 'gm', { side: 0 }).join() === 'p1' && (CS.moveToken(cc, 1, 0), CS.rollerFor(cc, own, 'gm', { side: 0 }).join() === 'p1,p2') && CS.rollerFor(cc, own, 'gm', { side: 1 }).join() === 'gm' && CS.rollerFor(cc, own, 'gm', { token: 0 }).join() === 'p1' && CS.rollerFor(cc, own, 'gm', { token: 2 }).join() === 'gm');
-    // Not fighting
-    const nf = CS.create(['a', 'b', 'c', 'd'], [0, 1, 2, 2], ['Party', 'Goblins'], [2, 2]);
-    check('(k) Not fighting: stored in the roster but in neither side, so it is left out of fighters, owners for rolls and banner; moving in and out works', nf.nf.join() === '2,3' && CS.fighters(nf).join() === '0,1' && CS.sideOf(nf, 2) === 2 && CS.rollerFor(nf, ['p1', 'p2', 'p3', 'p4'], 'gm', { side: 1 }).join() === 'p2' && (CS.moveToken(nf, 2, 1), CS.sideOf(nf, 2) === 1 && nf.nf.join() === '3') && (CS.moveToken(nf, 2, 2), nf.nf.join() === '2,3' && nf.sd[1].m.join() === '1') && !/Not fighting/.test(JSON.stringify(CS.banner(nf))));
-    // derived surprise ranges
-    const M = (name, cls, race, mon) => ({ name, cls: cls || [], race: race || '', mon: mon || null });
-    const dr = (a, b, ta, tb) => CS.deriveRanges([{ members: a, elfTick: !!ta }, { members: b, elfTick: !!tb }]);
-    let d = dr([M('Aldric', ['Fighter', 'Ranger'], 'Human')], [M('Goblin')]);
-    check('(k) a ranger in the party (multi-class counts): party surprised on 1 only (PHB p.24), foes surprised on 1-3 (the party surprises on 1-3)', d[0].ra === 1 && d[1].ra === 3 && /Aldric \(ranger\)/.test(d[0].txt) && /PHB p\.24/.test(d[0].pg), JSON.stringify(d));
-    const aerial = CS.monsterOf('Aerial servant');
-    d = dr([M('Aldric', ['Ranger'], 'Human')], [M('Aerial servant', [], '', aerial)]); const d0 = dr([M('Bob', ['Fighter'], 'Human')], [M('Aerial servant', [], '', aerial)]);
-    check('(k) a monster that surprises on 1-4 (MM p.6, by token name) makes the party surprised on 1-4, and a ranger cuts that to 1-3', d0[0].ra === 4 && d[0].ra === 3 && d[1].ra === 3 && CS.monsterOf('Aerial servant (2)').key === 'Aerial servant' && CS.monsterOf('Nobody') === null);
-    d = dr([M('Elwen', ['Fighter'], 'Elf')], [M('Goblin')]); const dt = dr([M('Elwen', ['Fighter'], 'Elf')], [M('Goblin')], true);
-    check('(k) elf or halfling surprise 1-4 only when the GM ticks the condition; tick off leaves 1-2 (PHB p.16, p.17)', d[1].ra === 2 && d[0].ra === 2 && dt[1].ra === 4 && dr([M('Pip', ['Thief'], 'Halfling')], [M('G')], true)[1].ra === 4 && dr([M('Pip', ['Thief'], 'Human')], [M('G')], true)[1].ra === 2);
-    check('(k) ranges: no members gives the usual 1-2; a side that surprises on 1-6 or an overwhelming factor floors at 0 and caps at 6; a GM override sticks', dr([], [])[0].ra === 2 && (() => { const k = mk(); CS.applyRanges(k, [{ ra: 1 }, { ra: 3 }]); const a = k.sd[0].ra === 1 && k.sd[1].ra === 3; CS.setRange(k, 0, 5); CS.applyRanges(k, [{ ra: 1 }, { ra: 3 }]); return a && k.sd[0].ra === 5 && k.sd[0].ov === 1 && k.sd[1].ra === 3; })());
-    // already rolled: same maths, source "rolled earlier"
-    let badE = 0;
-    for (let ra = 0; ra <= 4; ra++) for (let rb = 0; rb <= 4; rb++) for (let a = 1; a <= 6; a++) for (let b = 1; b <= 6; b++) {
-        const x = CS.create(['a', 'b'], [0, 1], ['A', 'B'], [ra, rb]), y = CS.create(['a', 'b'], [0, 1], ['A', 'B'], [ra, rb]), lx = {}, ly = {};
-        CS.step(x, lx, CS.needs(x).map(i => [a, b][i]), 0, []); CS.applyEarlierSurprise(y, ly, [a, b]);
-        if (JSON.stringify([x.rd, x.sg, x.sd[0].sl, x.sd[1].sl, x.sd[0].sr, x.sd[1].sr]) !== JSON.stringify([y.rd, y.sg, y.sd[0].sl, y.sd[1].sl, y.sd[0].sr, y.sd[1].sr])) badE++;
-    }
-    const ey = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]), el = {}; CS.applyEarlierSurprise(ey, el, [1, 2]);
-    check('(k) surprise dice rolled earlier give exactly the segments of rolled ones (3 x 25 x 36 cells) and the log says "rolled earlier"; "no surprise" goes to round 1', badE === 0 && ey.sd[1].sl === 1 && /Party rolled 1 for surprise, surprised on 1 to 2 \(rolled earlier\)/.test(CS.exportText(ey, el, [], x => x)) && (() => { const k = mk(), l = {}; CS.noSurprise(k, l); return k.rd === 1 && /No surprise/.test(l[0][0][9]); })());
-    check('(k) who rolled is kept in the entry and shown: "(Owlbear Dice tray by Sam)"', (() => { const k = mk(), l = {}; CS.skipSurprise(k); CS.step(k, l, [3, 4], 2, ['Sam', 'GM']); return /Party rolled 3 for initiative \(Owlbear Dice tray by Sam\)/.test(CS.entryText(l[1][0], k)) && /Goblins rolled 4 for initiative \(Owlbear Dice tray by GM\)/.test(CS.entryText(l[1][1], k)); })());
-    check('(k) which sides may act now: tie both, otherwise the winner then the other; round 0 the unsurprised side; none while rolling', (() => { const k = mk(); CS.skipSurprise(k); const n0 = CS.actingSides(k).length; CS.step(k, {}, [5, 2], 0, []); const a = CS.actingSides(k).join(); CS.advance(k); const b = CS.actingSides(k).join(); const t = mk(); CS.skipSurprise(t); CS.step(t, {}, [3, 3], 0, []); const s = mk(); CS.rollSurprise(s, 0, 1); CS.rollSurprise(s, 1, 2); return n0 === 0 && a === '0' && b === '1' && CS.actingSides(t).join() === '0,1' && CS.actingSides(s).join() === '0'; })());
-}
-
-
-// ---- (l) combat step 2a: right-click sides, attack tool target picking, the to-hit number, more than two sides
-{
-    const CS = G('CombatState'), CA = G('CombatAttack'), GC = G('GMCombat');
-    const meta0 = {}, p0 = CS.sidesPatch(meta0, ['x', 'y'], 1);
-    const inCombat = (() => { const c = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); const m = {}; m[CS.KEY] = c; return m; })();
-    const p1 = CS.sidesPatch(inCombat, ['a', 'new1', 'new2'], 1), c1 = p1[CS.KEY], p2 = CS.sidesPatch(inCombat, ['b'], 2);
-    check('(l) side menu before combat records the choice in `pre` (several tokens at once), merging with earlier choices', p0[CS.PRE].x === 1 && p0[CS.PRE].y === 1 && Object.keys(CS.sidesPatch({ [CS.PRE]: { z: 0 } }, ['x'], 2)[CS.PRE]).length === 2 && !(CS.KEY in p0));
-    check('(l) side menu in combat moves tokens and adds tokens not yet in the roster; Not fighting takes the side count', c1.sd[1].m.join() === '0,1,2,3' && c1.sd[0].m.length === 0 && c1.ro.join() === 'a,b,new1,new2' && p2[CS.KEY].nf.join() === '1' && p2[CS.KEY].sd[1].m.length === 0 && inCombat[CS.KEY].sd[1].m.join() === '1');
-    // more than two sides in the new code
-    const c3 = CS.create(['a', 'b', 'c', 'd'], [0, 1, 2, 3], ['A', 'B', 'C'], [2, 2, 2]);
-    check('(l) the new code handles any number of sides: 3 sides plus Not fighting in create, sideOf, moveToken, the side menu', c3.sd.length === 3 && c3.nf.join() === '3' && CS.sideOf(c3, 2) === 2 && CS.sideOf(c3, 3) === 3 && (CS.moveToken(c3, 3, 0), CS.sideOf(c3, 3) === 0) && (CS.moveToken(c3, 0, 3), c3.nf.join() === '0'));
-    // hit test and requests
-    const boxes = [{ id: 'a', min: { x: 0, y: 0 }, max: { x: 100, y: 100 } }, { id: 'b', min: { x: 80, y: 0 }, max: { x: 180, y: 100 } }];
-    check('(l) hit test: the token whose bounds hold the point, nearest centre when bounds overlap, nothing off the tokens', CA.hit({ x: 20, y: 50 }, boxes) === 'a' && CA.hit({ x: 150, y: 50 }, boxes) === 'b' && CA.hit({ x: 95, y: 50 }, boxes) === 'b' && CA.hit({ x: 85, y: 50 }, boxes) === 'a' && CA.hit({ x: 500, y: 500 }, boxes) === null);
-    const its = [{ id: 'a', createdUserId: 'p1', metadata: {} }, { id: 'b', createdUserId: 'gm', metadata: {} }, { id: 'c', createdUserId: 'gm', metadata: { [SR.OWNER_KEY]: 'p2' } }];
-    check('(l) who may attack: a player only from tokens they own (assigned owner, else placer); the GM from any; no self-attack, no empty drop', CA.request('PLAYER', 'p1', its, 'a', 'b', 1).ok && !CA.request('PLAYER', 'p1', its, 'b', 'a', 1).ok && !CA.request('PLAYER', 'p1', its, 'c', 'a', 1).ok && CA.request('PLAYER', 'p2', its, 'c', 'a', 1).ok && CA.request('GM', 'gm', its, 'a', 'b', 1).ok && !CA.request('GM', 'gm', its, 'a', 'a', 1).ok && !CA.request('GM', 'gm', its, 'a', 'zzz', 1).ok);
-    // 8.6 checks 1 to 3
-    const ac = CS.create(['a', 'b', 'c', 'd'], [0, 1, 0, 2], ['Party', 'Goblins'], [2, 2]); CS.skipSurprise(ac); const nmz = { a: 'Aldric', b: 'Goblin', c: 'Brenna', d: 'Bystander' };
-    const pr = (a, t) => CA.problems(ac, a, t, nmz).map(x => x.id).join();
-    CS.step(ac, {}, [5, 2], 0, []);   // Party has initiative: first side acts
-    check('(l) checks: both tokens in the roster and fighting; attacker\'s side must act now; same-side attacks refused; every problem has a one-line reason', pr('a', 'b') === '' && pr('b', 'a') === 'phase' && pr('a', 'zz') === 'roster' && pr('d', 'b') === 'nf' && pr('a', 'c') === 'side' && CA.problems(ac, 'b', 'a', nmz)[0].msg === 'Goblins does not act now (Party acts).' || /Goblins/.test(CA.problems(ac, 'b', 'a', nmz)[0].msg));
-    CS.advance(ac);
-    const sx = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.rollSurprise(sx, 0, 1); CS.rollSurprise(sx, 1, 2);
-    check('(l) checks: second side acts next; during a surprise segment the surprised side is barred; switching "Side order" off lifts the phase check', pr('b', 'a') === '' && pr('a', 'b') === 'phase' && CA.problems(sx, 'b', 'a', nmz).map(x => x.id).join() === 'surprise' && CA.problems(sx, 'a', 'b', nmz).length === 0 && (CS.setToggle(ac, 'cm.phase-order', false), pr('a', 'b') === ''));
-    // to-hit numbers against COMBAT_CALC
-    const pcSheet = Object.assign(SR.blank(), { race: 'Human', cl: ['Fighter'], lv: [7], sc: [10, 10, 10, 10, 10, 10], pf: ['Sword, Long & scabbard', 'Bow, long'] });
-    const pcItem = { name: 'Aldric', metadata: { [SR.KEY]: SR.sanitize(pcSheet) } }, pcf = CA.facts(pcItem), wl = pcf.weapons.findIndex(w => w.name === 'Sword, long'), wb = pcf.weapons.findIndex(w => w.name === 'Bow, long');
-    const wi = n => G('WEAPONS').findIndex(w => w.name === n);
+    check('(n) surprise: 2401 range and die cells equal the DMG p.61-62 text (segments lost = the surprised side\'s die, both surprised subtract, equal = none)', bad === 0, bad + ' wrong');
+    let s = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); const w0 = CS.surpriseWords(s, () => null, k => 'k' + k);
+    CS.setSurprise(s, 0, 4); CS.setSurprise(s, 1, 2); const w1 = CS.surpriseWords(s, () => null, k => 'k' + k);
+    const s2 = CS.create(['a', 'b', 'c'], [0, 1, 1], ['Party', 'Goblins'], [2, 2]); CS.setSurprise(s2, 0, 5); CS.setSurprise(s2, 1, 2); const w2 = CS.surpriseWords(s2, () => null, k => 'k' + k);
+    const s3 = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.setSurprise(s3, 0, 1); CS.setSurprise(s3, 1, 1); const s4 = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [0, 0]);
+    check('(n) surprise in words: "Goblins surprised: lose 2 segments; Party may act in segments 1-2", one segment singular, equal = no effect, none = nobody, a range of 0 needs no die, not rolled yet asks', /^Roll or type both dice/.test(w0.text) && w1.text === 'Goblins surprised: lose 2 segments; Party may act in segments 1-2.' && w2.text === w1.text && CS.surpriseWords(s3, () => null, k => k).text === 'Both sides surprised equally: no effect.' && CS.surpriseWords(s4, () => null, k => k).text === 'Nobody is surprised.' && (() => { const t = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.setSurprise(t, 0, 6); CS.setSurprise(t, 1, 1); const u = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.setSurprise(u, 0, 5); CS.setSurprise(u, 1, 6); return CS.surpriseWords(t, () => null, k => k).text === 'Goblins surprised: lose 1 segment; Party may act in segment 1.' && CS.surpriseWords(u, () => null, k => k).text === 'Nobody is surprised.'; })());
+    const sd = CS.create(['a', 'b', 'c'], [0, 1, 1], ['Party', 'Goblins'], [2, 2]); CS.setSurprise(sd, 0, 4); CS.setSurprise(sd, 1, 6); sd.sd[0].ra = 4; const dxs = { 0: 17, 1: 3, 2: null }, wd = CS.surpriseWords(sd, k => dxs[k], k => ['Aldric', 'Brenna', 'x'][k]);
+    check('(n) surprise: the DEX adjustment is listed per PC of the surprised side (PHB p.11: DEX 17 takes 2 off, 3 adds 3), nobody without a sheet; ranges as derived are used', /^Party surprised: lose 4 segments; Goblins may act in segments 1-4\.$/.test(wd.text) && wd.dex.join('|') === 'Aldric (DEX 17): loses 2 segments' && (() => { const t = CS.create(['a'], [0], ['Party', 'Goblins'], [4, 2]); CS.setSurprise(t, 0, 4); CS.setSurprise(t, 1, 6); return CS.surpriseWords(t, () => 3, () => 'Brenna').dex.join() === 'Brenna (DEX 3): loses 7 segments'; })());
+    // initiative and rounds
+    c = mk(); CS.rollInit(c, 0, 5); CS.rollInit(c, 1, 2); const t1 = CS.initText(c); CS.rollInit(c, 1, 5);
+    check('(n) initiative: d6 per side, "Party 5, Goblins 2: Party goes first", a tie is simultaneous and the A23 note (longer weapon first, else lower speed factor, DMG p.66) is there', t1 === 'Party 5, Goblins 2: Party goes first' && c.w === 2 && /tie, both sides act together/.test(CS.initText(c)) && /longer weapon/.test(CS.TIE_NOTE) && /lower speed factor/.test(CS.TIE_NOTE) && CS.initText(mk()) === '');
+    c = mk(); CS.addSpell(c, 0, 'Hold Person', 2); CS.addSpell(c, 1, 'Bless', 6); CS.rollInit(c, 0, 3); CS.rollInit(c, 1, 4); CS.hit(c, 0, 1); CS.hit(c, 0, 1); CS.hit(c, 1, 1);
+    const ex1 = CS.nextRound(c), ex2 = CS.nextRound(c);
+    check('(n) Next round: this round\'s hits become "last round", hits and initiative clear, the round counts up, spells count down and report when they run out', c.rd === 3 && c.lh.join() === '0,0' && c.ht.join() === '0,0' && c.w === -1 && c.sd[0].in === 0 && ex1.length === 0 && ex2.length === 1 && ex2[0][1] === 'Hold Person' && c.sp.length === 1 && c.sp[0][2] === 4 && (() => { const k = mk(); CS.hit(k, 0, 1); CS.nextRound(k); return k.lh.join() === '1,0'; })());
+    c = mk(); const turns = []; for (let i = 0; i < 21; i++) { turns.push(c.tn + ':' + CS.roundInTurn(c)); CS.nextRound(c); }
+    check('(n) turns: 1 turn = 10 rounds (PHB p.39): round 1 to 10 is turn 1, round 11 starts turn 2 at round 1 of 10, round 21 is turn 3', turns[0] === '1:1' && turns[9] === '1:10' && turns[10] === '2:1' && turns[19] === '2:10' && turns[20] === '3:1' && c.rd === 22);
+    // hits and morale
+    const mf = (a, b) => { const k = mk(); k.ht = [a, b]; return CS.moraleFlags(k); };
+    check('(n) hits: + and - per side (never below 0); one side hitting at least twice as often as the other, and at least twice, tells the other to check morale (DMG p.67)', mf(2, 1).length === 1 && /^Goblins check morale: Party hit twice as often \(DMG p\.67\)\.$/.test(mf(2, 1)[0]) && mf(1, 0).length === 0 && mf(3, 2).length === 0 && mf(2, 2).length === 0 && mf(4, 2).length === 1 && /^Party check morale: Goblins hit/.test(mf(0, 3)[0]) && (() => { const k = mk(); CS.hit(k, 0, -1); CS.hit(k, 0, 1); CS.hit(k, 0, 1); CS.hit(k, 0, -1); return k.ht[0] === 1; })());
+    // hit points
+    check('(n) hit points: "-6" and "+3" change them, a number sets them (and lifts the maximum), the first number on a token with none is its maximum, nonsense is refused; 0 or less is dead (PHB p.105)', CS.hpEdit([10, 12], '-6').join() === '4,12' && CS.hpEdit([4, 12], '+3').join() === '7,12' && CS.hpEdit([4, 12], '9').join() === '9,12' && CS.hpEdit([4, 12], '15').join() === '15,15' && CS.hpEdit(null, '11').join() === '11,11' && CS.hpEdit(null, '-3') === null && CS.hpEdit([4, 12], 'abc') === null && CS.hpEdit([4, 12], '-4')[0] === 0 && CS.isDead([0, 12]) && CS.isDead([-2, 12]) && !CS.isDead([1, 12]) && !CS.isDead(null));
+    let k = 0; const fixed = () => [0, 0.999, 0.5, 0.25][k++ % 4], hd1 = CS.rollHd('3+3', fixed); k = 0; const hd2 = CS.rollHd('1-1', () => 0), hd3 = CS.rollHd('4', () => 0.999);
+    check('(n) hit points rolled from the MM hit dice: n d8 plus the modifier, at least 1 ("3+3" with dice 1, 8, 5 = 17; "1-1" on a 1 = 1; "4" on all 8s = 32)', hd1.join() === '17,17' && hd2.join() === '1,1' && hd3.join() === '32,32' && CS.rollHd('nonsense') === null && (() => { let lo = 99, hi = 0; for (let i = 0; i < 2000; i++) { const h = CS.rollHd('2+1')[0]; lo = Math.min(lo, h); hi = Math.max(hi, h); } return lo >= 3 && hi <= 17 && lo <= 4 && hi >= 16; })());
+    const cz = CS.create(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'], [0, 1, 1, 1, 1, 1, 1, 0], ['Party', 'Goblins'], [2, 2]), dn = new Set([1, 2, 3]), cas = CS.casualties(cz, i => dn.has(i));
+    check('(n) casualties: "Goblins down: 3 of 6 (50%)" with the DMG p.67 reminder (25% lost: morale +5; 50% lost: +15), nothing below 25%', cas[1].text === 'Goblins down: 3 of 6 (50%)' && /^50% lost: morale \+15/.test(cas[1].morale) && cas[0].morale === '' && (() => { const x = CS.casualties(cz, i => i === 1 || i === 2)[1]; return x.text === 'Goblins down: 2 of 6 (33%)' && /^25% lost: morale \+5/.test(x.morale); })() && CS.casualties(cz, i => i === 1)[1].morale === '' && CS.casualties(cz, () => false)[1].pct === 0);
+    // spells
+    c = mk();
+    check('(n) spell rounds: a name and at least 1 round, kept per PC, counted down by Next round', CS.addSpell(c, 0, 'Web', 3) && !CS.addSpell(c, 0, '', 3) && !CS.addSpell(c, 0, 'x', 0) && c.sp.length === 1);
+    // to-hit both ways against COMBAT_CALC
+    const pcSheet = Object.assign(SR.blank(), { race: 'Human', cl: ['Fighter'], lv: [7], sc: [10, 10, 10, 10, 10, 10], pf: ['Sword, Long & scabbard', 'Bow, long', 'Crossbow, light', 'Crossbow, heavy', 'Dart'], inv: [['Chain', 1], ['Shield, small', 1]] });
+    const pcItem = { name: 'Aldric', metadata: { [SR.KEY]: SR.sanitize(pcSheet) } }, pcf = CA.facts(pcItem), wi = n => pcf.weapons.findIndex(w => w.name === n), wref = n => G('WEAPONS').findIndex(w => w.name === n);
     let badN = 0, cells = 0;
-    [['fighter', 7, 'Sword, long', wl], ['fighter', 7, 'Bow, long', wb]].forEach(([cls, lv, wn, idx]) => { for (let ac2 = -2; ac2 <= 10; ac2++) for (const am of [0, 2, 5, 6]) { const type = G('acType')(am, false), ref = GC.toHitState({ cls, lv, wi: wi(wn), ac: ac2, armorIdx: am, shield: false, bonus: 0, penalty: 0, sit: 0, range: 'S', size: 'SM' }); cells++; if (CA.need(pcf, idx, ac2, type, 0) !== ref.need) badN++; } });
-    check('(l) PC to-hit number (sheet class, level, weapon adjustment against the armour type) equals COMBAT_CALC for a level 7 fighter, sword and bow, ' + cells + ' cells', badN === 0 && pcf.kind === 'pc' && wl >= 0 && wb >= 0, badN + ' wrong');
-    const strong = CA.facts({ name: 'Strong', metadata: { [SR.KEY]: SR.sanitize(Object.assign(SR.blank(), pcSheet, { sc: [17, 10, 10, 10, 10, 10] })) } });
-    check('(l) STR 17 (+1 to hit, PHB p.9) makes a melee attack one easier, DEX 16 helps a missile attack (PHB p.11); a bonus of 2 lowers the number by 2', CA.need(strong, wl, 5, 7, 0) === CA.need(pcf, wl, 5, 7, 0) - 1 && CA.need(pcf, wl, 5, 7, 2) === CA.need(pcf, wl, 5, 7, 0) - 2 && CA.need(pcf, wl, 5, null, 0) === CA.need(pcf, wl, 5, 7, 0) + (pcf.weapons[wl].adj[10 - 7] || 0));
-    let badM = 0; const mons = ['Ogre', 'Goblin', 'Kobold', 'Aerial servant', 'Anhkheg', 'Ape, carnivorous'];
-    mons.forEach(m => { const f = CA.facts({ name: m, metadata: {} }); if (f.kind !== 'mon') { badM++; return; } for (let a2 = -3; a2 <= 9; a2++) { const ref = GC.toHitState({ cls: 'monster', lv: f.col, wi: 0, ac: a2, armorIdx: 10, shield: false, bonus: 0, penalty: 0, sit: 0, range: 'S', size: 'SM' }); if (CA.need(f, 0, a2, null, 0) !== ref.need) badM++; } });
-    const og = CA.facts({ name: 'Ogre', metadata: {} }), gb = CA.facts({ name: 'Goblin 3', metadata: {} });
-    check('(l) monster to-hit by hit dice from the MM by exact name (a trailing number is ignored) equals the COMBAT_CALC monster matrix; the AC comes from the MM', badM === 0 && og.mm === 'Ogre' && og.col === 5 && gb.mm === 'Goblin' && gb.ac === 6 && og.ac === 5 && CA.facts({ name: 'Nobody', metadata: {} }).kind === 'none');
-    check('(l) hit dice to matrix column: 1-1 and 1+1 and 4+1 and 16', CA.monsterCol({ hitDice: '1-1', hdValue: 0.9 }) === 1 && CA.monsterCol({ hitDice: '1', hdValue: 1 }) === 2 && CA.monsterCol({ hitDice: '1+1', hdValue: 1.1 }) === 3 && CA.monsterCol({ hitDice: '3', hdValue: 3 }) === 4 && CA.monsterCol({ hitDice: '4+1', hdValue: 4.1 }) === 5 && CA.monsterCol({ hitDice: '8+2', hdValue: 8 }) === 7 && CA.monsterCol({ hitDice: '16', hdValue: 16 }) === 11);
-    const tgt = CA.facts({ name: 'Chainy', metadata: { [SR.KEY]: SR.sanitize(Object.assign(SR.blank(), pcSheet, { inv: [['Chain', 1], ['Shield, small', 1]] })) } });
-    check('(l) target armour type for a PC is suit and shield only (chain with shield = 4), AC from the sheet; hit when the d20 is at least the number, no automatic hit or miss on 20 or 1', tgt.type === 4 && typeof tgt.ac === 'number' && /rolled 14, needs 12: hit/.test(CA.text('Aldric', 'Goblin 3', 14, 12, true)) && /needs 12: miss/.test(CA.text('A', 'B', 11, 12, false)) && /GM override/.test(CA.text('A', 'B', 11, 12, false, true)));
-    // d20 from the tray
-    const md = (v, n) => ({ 'rodeo.owlbear.dice/rollValues': v, 'rodeo.owlbear.dice/roll': { n } });
-    const bs = CS.traySnap([{ id: 'p1', metadata: md([3], 1) }]);
-    check('(l) tray d20: a new single die up to 20 is taken from the attacker\'s owner, a 17 is no d6, rolls by others are ignored', CS.trayPick(bs, [{ id: 'p1', name: 'Sam', metadata: md([3], 1) }], [['p1']], 20) === null && (CS.trayPick(bs, [{ id: 'p2', name: 'Kim', metadata: md([17], 5) }], [['p1']], 20) === null) && CS.trayPick(bs, [{ id: 'p1', name: 'Sam', metadata: md([17], 6) }], [['p1']], 20).value === 17 && CS.dieOf(md([17], 1)) === null && CS.dieOf(md([17], 1), 20) === 17);
-    const ae = CS.entry(2, 2, 0, 14, 12, 4 | 1, 'Aldric attacks Goblin 3: rolled 14, needs 12: hit', 'Sam'); ae[3] = 1;
-    check('(l) attack log entry is kind 2 with actor, target, roll, need and the roll source; it is visible to everyone', ae[1] === 2 && ae[2] === 0 && ae[3] === 1 && ae[4] === 14 && ae[5] === 12 && (ae[8] & 3) === 1 && CS.visible([ae]).length === 1 && CS.entryText(ae, c3) === 'Aldric attacks Goblin 3: rolled 14, needs 12: hit');
-}
-
-
-// ---- (m) combat step 2b: attack allowance per round, refusal and override, undo, dots
-{
-    const CS = G('CombatState'), CA = G('CombatAttack'), W = n => G('WEAPONS').filter(w => w.name === n)[0];
-    const mk = () => { const c = CS.create(['a', 'b'], [0, 1], ['Party', 'Goblins'], [2, 2]); CS.skipSurprise(c); return c; };
-    const pc = (cl, lv, pf) => CA.facts({ name: 'P', metadata: { [SR.KEY]: SR.sanitize(Object.assign(SR.blank(), { race: 'Human', cl: cl, lv: lv, sc: [16, 12, 12, 12, 14, 12], pf: pf || ['Sword, Long & scabbard'] })) } });
-    const at = (f, wi, rd, sg) => { const c = mk(); c.rd = rd; c.sg = sg || 0; return CA.perRound(f, wi, c); };
-    check('(m) PHB p.38 rate of fire is read as printed: bow 2, light crossbow 1, heavy crossbow 1/2, dart 3, hand axe 1', [['Bow, long', 2], ['Crossbow, light', 1], ['Crossbow, heavy', 0.5], ['Dart', 3], ['Axe, hand', 1]].every(x => CA.rateOf(W(x[0])) === x[1]));
-    const f7 = pc(['Fighter'], [7]), f13 = pc(['Fighter'], [13]), f6 = pc(['Fighter'], [6]), r8 = pc(['Ranger'], [8]), r15 = pc(['Ranger'], [15]), r7 = pc(['Ranger'], [7]), cl = pc(['Cleric'], [9]), mc = pc(['Fighter', 'Magic-User'], [7, 7]), pal = pc(['Paladin'], [13]);
-    check('(m) attack routines (PHB p.25): fighter and paladin 3/2 from 7th and 2/1 from 13th, ranger 3/2 from 8th and 2/1 from 15th, others 1; multi-class uses the best', [f6, r7, cl].every(f => f.routines === '1') && f7.routines === '3/2' && r8.routines === '3/2' && f13.routines === '2' && r15.routines === '2' && pal.routines === '2' && mc.routines === '3/2');
-    check('(m) 3/2 is two routines in odd rounds and one in even rounds; 2/1 is two every round; 1 is one (DMG p.63)', at(f7, 0, 1).max === 2 && at(f7, 0, 2).max === 1 && at(f7, 0, 3).max === 2 && at(f13, 0, 2).max === 2 && at(f6, 0, 1).max === 1 && at(f6, 0, 2).max === 1 && at(f7, 0, 1).unit === 'attack' && at(r8, 0, 5).max === 2);
-    const bow = pc(['Fighter'], [7], ['Sword, Long & scabbard', 'Bow, long', 'Crossbow, heavy', 'Crossbow, light', 'Dart']), wi = n => bow.weapons.findIndex(w => w.name === n);
-    check('(m) missiles: one routine of the rate in shots (bow 2, light crossbow 1, dart 3), not multiplied by the fighter\'s 3/2; heavy crossbow fires on odd rounds only', at(bow, wi('Bow, long'), 1).max === 2 && at(bow, wi('Bow, long'), 2).max === 2 && at(bow, wi('Crossbow, light'), 2).max === 1 && at(bow, wi('Dart'), 1).max === 3 && at(bow, wi('Crossbow, heavy'), 1).max === 1 && at(bow, wi('Crossbow, heavy'), 2).max === 0 && at(bow, wi('Bow, long'), 1).unit === 'shot' && at(bow, wi('Bow, long'), 1).per === 1);
-    check('(m) surprise segments (DMG p.62): missiles at three times the rate (bow 6, light crossbow 3, heavy 1); melee counts each segment as a round (3/2: 2 then 1; 2/1: 2 each); switching the allowance off gives normal rounds', at(bow, wi('Bow, long'), 0, 1).max === 6 && at(bow, wi('Crossbow, light'), 0, 2).max === 3 && at(bow, wi('Crossbow, heavy'), 0, 1).max === 1 && at(f7, 0, 0, 1).max === 2 && at(f7, 0, 0, 2).max === 1 && at(f13, 0, 0, 2).max === 2 && (() => { const c = mk(); c.rd = 0; c.sg = 1; CS.setToggle(c, 'cm.surprise-attacks', false); return CA.perRound(bow, wi('Bow, long'), c).max === 2; })());
-    const ape = CA.facts({ name: 'Ape, carnivorous', metadata: {} }), ogre = CA.facts({ name: 'Ogre', metadata: {} });
-    check('(m) a monster makes one routine of the MM attack count, each its own d20 (claw/claw/bite = 3 rows with their damage forms); "1 or 2" and "see below" count as 1', ape.n === 3 && ape.forms.join() === '1-4,1-4,1-8' && at(ape, 0, 1).max === 1 && at(ape, 0, 1).per === 3 && at(ape, 0, 1).unit === 'routine' && ogre.n === 1 && CA.mmAttacks({ attacks: '1 or 2' }) === 1 && CA.mmAttacks({ attacks: 'See below' }) === 1 && CA.mmAttacks({ attacks: '2 or 1' }) === 2 && at(ape, 0, 0, 1).max === 1);
-    // used attacks live in the token's cs with a round stamp (lazy reset)
-    const cc = mk(); cc.rd = 3; const it = { metadata: { [CA.CS]: { rs: CA.stamp(cc), at: 1, mx: 2 } } };
-    check('(m) the token\'s `cs` is valid only in its stamped round (lazy reset, spec 8.4); a surprise segment is its own stamp', CA.csOf(it, cc).at === 1 && (() => { cc.rd = 4; return CA.csOf(it, cc).at === 0; })() && (() => { const s = mk(); s.rd = 0; s.sg = 1; const a = CA.stamp(s); s.sg = 2; return a !== CA.stamp(s) && CA.csOf({ metadata: { [CA.CS]: { rs: a, at: 2, mx: 2 } } }, s).at === 0; })() && CA.csOf({ metadata: {} }, cc).at === 0);
-    // refusal and override
-    const nm = { a: 'Aldric', b: 'Goblin' }, ac = mk(); CS.step(ac, {}, [5, 2], 0, []);
-    const pr = (used, max, unit) => CA.problems(ac, 'a', 'b', nm, { used: used, max: max, unit: unit || 'attack' });
-    check('(m) one attack after the last is refused with a reason ("Aldric has used all 2 attacks this round (2 of 2)"); under the limit and with "Attacks per round" off it is fine; a heavy crossbow out of turn says why', pr(1, 2).length === 0 && /used all 2 attacks this round \(2 of 2\)/.test(pr(2, 2)[0].msg) && pr(2, 2)[0].id === 'multi' && /used all 1 attack this round/.test(pr(1, 1)[0].msg) && (CS.setToggle(ac, 'cm.multi-attack', false), pr(2, 2).length === 0) && (CS.setToggle(ac, 'cm.multi-attack', true), /every other round/.test(pr(0, 0)[0].msg)) && CA.problems(ac, 'a', 'b', nm).length === 0);
-    // undo with the cs as extra
-    const uc = mk(), ul = {}, us = []; CS.step(uc, ul, [5, 2], 0, []); const b4 = CS.takeSnap(uc, ul); CS.logAdd(ul, 1, CS.entry(0, 2, 0, 14, 12, 4, 'x')); CS.pushUndo(us, b4, ul, 'Attack: Aldric', { id: 'a', cs: { rs: 100, at: 1, mx: 2 } });
-    const ur = CS.undo(uc, ul, JSON.parse(JSON.stringify(us)));
-    check('(m) an attack goes through pushUndo with its previous `cs` as extra: undo removes the log line and hands the extra back to restore the token', ur.label === 'Attack: Aldric' && ur.x.id === 'a' && ur.x.cs.at === 1 && !ul[1].some(e => e[1] === 2));
-    // dots
-    const dc = mk(), cs = (rd, at, mx) => ({ rs: rd * 100, at: at, mx: mx });
-    check('(m) dot state: none before anything; open dot after some attacks; filled when all are used; filled when the side has finished acting (its phase passed)', CA.dotState(dc, 0, null) === null && CA.dotState(dc, 0, cs(1, 1, 2)) === 'some' && CA.dotState(dc, 0, cs(1, 2, 2)) === 'done' && CA.dotState(dc, 0, cs(0, 2, 2)) === null && (() => { CS.step(dc, {}, [5, 2], 0, []); const a = CA.dotState(dc, 0, null) === null; CS.advance(dc); return a && CA.dotState(dc, 0, null) === 'done' && CA.dotState(dc, 1, null) === null && (CS.advance(dc), CA.dotState(dc, 1, null) === 'done'); })());
-    const sd = CS.create(['a', 'b', 'c'], [0, 1, 2], ['Party', 'Goblins'], [2, 2]); CS.rollSurprise(sd, 0, 1); CS.rollSurprise(sd, 1, 2);
-    check('(m) dot state in surprise: the surprised side shows the slash dot while its segments last; a token that is not fighting or not in the roster has none; "surprised side cannot act" off removes the slash', CA.dotState(sd, 1, null) === 'unable' && CA.dotState(sd, 0, null) === null && CA.dotState(sd, 2, cs(0, 1, 2)) === null && CA.dotState(sd, -1, null) === null && (CS.setToggle(sd, 'cm.surprise-bar', false), CA.dotState(sd, 1, null) === null));
+    [['Sword, long'], ['Bow, long']].forEach(([wn]) => { for (let ac2 = -2; ac2 <= 10; ac2++) for (const am of [0, 2, 5, 6]) { const ref = GC.toHitState({ cls: 'fighter', lv: 7, wi: wref(wn), ac: ac2, armorIdx: am, shield: false, bonus: 0, penalty: 0, sit: 0, range: 'S', size: 'SM' }); cells++; if (CA.need(pcf, wi(wn), ac2, G('acType')(am, false), 0) !== ref.need) badN++; } });
+    const ogre = CA.facts({ name: 'Ogre', metadata: {} }), ape = CA.facts({ name: 'Ape, carnivorous', metadata: {} }), gob = CA.facts({ name: 'Goblin 3', metadata: {} });
+    let badM = 0; [ogre, ape, gob, CA.facts({ name: 'Anhkheg', metadata: {} })].forEach(f => { for (let a2 = -3; a2 <= 9; a2++) { const ref = GC.toHitState({ cls: 'monster', lv: f.col, wi: 0, ac: a2, armorIdx: 10, shield: false, bonus: 0, penalty: 0, sit: 0, range: 'S', size: 'SM' }); if (CA.need(f, 0, a2, null, 0) !== ref.need) badM++; } });
+    check('(n) to-hit, PC attacker (level 7 fighter, sword and bow against armour types, ' + cells + ' cells) and monster attacker (four monsters, AC -3 to 9) equal COMBAT_CALC', badN === 0 && badM === 0 && wi('Sword, long') >= 0, badN + ' PC wrong, ' + badM + ' monster wrong');
+    const chainy = CA.facts({ name: 'Chainy', metadata: { [SR.KEY]: pcItem.metadata[SR.KEY] } });
+    const pcVsOgre = CA.need(pcf, wi('Sword, long'), ogre.ac, ogre.type, 0), ogreVsPc = CA.need(ogre, 0, pcf.ac, pcf.type, 0);
+    check('(n) a pair shows both directions: the fighter needs ' + pcVsOgre + ' against the Ogre (AC 5), the Ogre needs ' + ogreVsPc + ' against the chain-and-shield fighter; the target AC comes from the MM or the sheet and a typed AC changes the number', ogre.ac === 5 && pcf.type === 4 && typeof pcf.ac === 'number' && pcVsOgre === GC.toHitState({ cls: 'fighter', lv: 7, wi: wref('Sword, long'), ac: 5, armorIdx: 10, shield: false, bonus: 0, penalty: 0, sit: 0, range: 'S', size: 'L' }).need && ogreVsPc === GC.toHitState({ cls: 'monster', lv: ogre.col, wi: 0, ac: pcf.ac, armorIdx: 10, shield: false, bonus: 0, penalty: 0, sit: 0, range: 'S', size: 'SM' }).need && CA.need(pcf, wi('Sword, long'), 3, null, 0) === CA.need(pcf, wi('Sword, long'), 5, null, 0) + 2 && chainy.type === 4);
+    // text
+    const f13 = CA.facts({ name: 'F13', metadata: { [SR.KEY]: SR.sanitize(Object.assign(SR.blank(), pcSheet, { lv: [13] })) } }), f6 = CA.facts({ name: 'F6', metadata: { [SR.KEY]: SR.sanitize(Object.assign(SR.blank(), pcSheet, { lv: [6] })) } });
+    check('(n) attacks per round as text: fighter 1, 3/2 (7th) and 2/1 (13th) (PHB p.25); bow "2 shots", light crossbow "1 shot", heavy "1 shot every other round", dart "3 shots" (PHB p.38); the Ape "3 attacks (1-4, 1-4, 1-8)", the Ogre "1 attack (1-10 or by weapon)"',
+        CA.attacksText(f6, 0) === '1' && CA.attacksText(pcf, wi('Sword, long')) === '3/2' && CA.attacksText(f13, 0) === '2/1' && CA.attacksText(pcf, wi('Bow, long')) === '2 shots' && CA.attacksText(pcf, wi('Crossbow, light')) === '1 shot' && CA.attacksText(pcf, wi('Crossbow, heavy')) === '1 shot every other round' && CA.attacksText(pcf, wi('Dart')) === '3 shots' && CA.attacksText(ape, 0) === '3 attacks (1-4, 1-4, 1-8)' && CA.attacksText(ogre, 0) === '1 attack (1-10 or by weapon)');
+    const swl = W('Sword, long'), strong = CA.facts({ name: 'S', metadata: { [SR.KEY]: SR.sanitize(Object.assign(SR.blank(), pcSheet, { sc: [17, 10, 10, 10, 10, 10] })) } });
+    check('(n) damage die against S-M and against L (PHB p.37; long sword 1-8 and 1-12), with the STR bonus noted; a monster shows the MM damage; weapon speed factor (PHB p.38)', CA.damageText(pcf, wi('Sword, long')) === 'damage ' + swl.smTxt + ' vs S-M, ' + swl.lgTxt + ' vs L' && /vs S-M, .* vs L \+1 STR$/.test(CA.damageText(strong, wi('Sword, long'))) && CA.damageText(ape, 0) === 'damage 1-4/1-4/1-8' && CA.damageText(gob, 0).indexOf('damage') === 0 && CA.speedText(pcf, wi('Sword, long')) === 'speed ' + (swl.spd !== undefined ? '5' : '5') && CA.speedText(ogre, 0) === '');
+    check('(n) missile weapons carry the firing-into-melee note (DMG p.63: chances by numbers, small half, large one and a half, picked at random); melee weapons do not', CA.isMissile(pcf, wi('Bow, long')) && !CA.isMissile(pcf, wi('Sword, long')) && !CA.isMissile(ogre, 0) && /DMG p\.63/.test(CA.MISSILE_NOTE) && /at random/.test(CA.MISSILE_NOTE) && /half/.test(CA.MISSILE_NOTE) && /one and a half/.test(CA.MISSILE_NOTE));
+    check('(n) monster matrix column from hit dice, MM attack counts and AC, hit test for the Fight tool', CA.monsterCol({ hitDice: '1-1', hdValue: 0.9 }) === 1 && CA.monsterCol({ hitDice: '4+1', hdValue: 4.1 }) === 5 && CA.monsterCol({ hitDice: '16', hdValue: 16 }) === 11 && CA.mmAttacks({ attacks: '1 or 2' }) === 1 && CA.mmAttacks({ attacks: 'See below' }) === 1 && ape.n === 3 && gob.ac === 6 && CA.hit({ x: 95, y: 50 }, [{ id: 'a', min: { x: 0, y: 0 }, max: { x: 100, y: 100 } }, { id: 'b', min: { x: 80, y: 0 }, max: { x: 180, y: 100 } }]) === 'b' && CA.hit({ x: 500, y: 5 }, []) === null);
+    // legacy clean-up
+    const old = { v: 1, on: 1, rd: 4, ph: 2, sg: 0, op: 66, rs: 1, w: 0, ro: ['a', 'b', 'c'], nf: [2], sd: [{ n: 'Heroes', ra: 1, sr: 3, sl: 0, in: 5, ov: 1, m: [0] }, { n: 'Orcs', ra: 2, sr: 0, sl: 0, in: 2, m: [1] }], un: [], k: [], ak: {} };
+    const lm = { [SR.NS + '/combat']: old, [SR.NS + '/undo']: [{ l: 'x' }], [SR.NS + '/log/1']: [[0]], [SR.NS + '/log/s']: [[1]], [SR.NS + '/pre']: { a: 1 }, other: 1 }, cp = CS.cleanPatch(lm), mig = cp[SR.NS + '/combat'];
+    check('(n) clean-up on load: undo and every log/<round> key are deleted, an old-shape combat keeps its sides, names, ranges, roster and round and drops the rest; a v2 combat, `pre` and other keys are left alone', cp[SR.NS + '/undo'] === undefined && (SR.NS + '/undo') in cp && (SR.NS + '/log/1') in cp && (SR.NS + '/log/s') in cp && !(SR.NS + '/pre' in cp) && !('other' in cp) && mig.v === 2 && mig.rd === 4 && mig.tn === 1 && mig.sd[0].n === 'Heroes' && mig.sd[0].ra === 1 && mig.sd[0].ov === 1 && mig.nf.join() === '2' && mig.ro.length === 3 && !('ph' in mig) && Object.keys(CS.cleanPatch({ [SR.NS + '/combat']: mk(), x: 1 })).length === 0);
+    check('(n) old per-token attack counts in `cs` are recognised and the new {h:[hp,max]} is not', CS.oldCs({ rs: 100, at: 1, mx: 2 }) && !CS.oldCs({ h: [5, 8] }) && !CS.oldCs(undefined));
+    const cm = {}; cm[CS.KEY] = mk(); cm[CS.PRE] = { a: 1 }; cm[SR.NS + '/undo'] = []; const clr = CS.clearPatch(cm);
+    check('(n) End combat clears the combat key, `pre` and any leftover undo and log keys, and nothing else', clr[CS.KEY] === undefined && CS.PRE in clr && (SR.NS + '/undo') in clr && Object.keys(clr).length === 3 && CS.read({}).c === null && CS.read(cm).c.v === 2);
 }
 
 const html = ['index.html', 'guide.html', 'js/app.js', 'css/toolkit.css'].map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');

@@ -282,3 +282,17 @@ label.chk{display:flex;align-items:flex-start;gap:var(--s2)}label.chk input{marg
 .ehd{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;background:var(--soft)!important}
 .ecell{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ecell.none{color:var(--muted)}.ecell.na{color:var(--muted);opacity:.6}.ecell.hit{font-weight:600}
 .egrid .go{cursor:pointer}.egrid .go:hover{background:var(--hl)}.ecard{scroll-margin-top:var(--s3)}
+
+/* ---------- simple combat card (2026-11-16) ---------- */
+/* gear buttons carry no outline box, in the hub header and in the card */
+button.gear,button.btn.ghost.gear,.cmcard .ibtn{border:0;background:none;box-shadow:none}button.gear:hover,.cmcard .ibtn:hover{background:var(--hl)}
+.cmround{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;margin:var(--s1) 0 var(--s2)}.cminit{font-weight:600;flex:1;min-width:8em}
+.cmnote{border:var(--hair) solid var(--line);box-shadow:inset 4px 0 0 var(--fg);padding:var(--s1) var(--s3) var(--s1) calc(var(--s3) + 4px);margin:var(--s1) 0;font-size:13px;font-weight:600}
+.cmbox{border:var(--hair) solid var(--line);padding:var(--s1) var(--s3);margin:var(--s2) 0}.cmbox summary{cursor:pointer;font-size:12.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:600}.cmwords{margin:var(--s2) 0 var(--s1)}
+.cmcard h4{font-size:12px;margin:var(--s3) 0 var(--s1);padding-bottom:var(--s1);border-bottom:var(--hair) solid var(--line)}
+.cmpair{border:var(--hair) solid var(--line);margin:var(--s2) 0}.cmph{display:flex;justify-content:space-between;align-items:center;gap:var(--s2);padding:var(--s1) var(--s3);background:var(--soft);border-bottom:var(--hair) solid var(--line)}
+.cmdirs{display:grid;grid-template-columns:1fr 1fr}.cmdir{padding:var(--s2) var(--s3);font-size:13px;display:flex;flex-direction:column;gap:var(--s1);min-width:0}.cmdir+.cmdir{border-left:var(--hair) solid var(--line)}
+.cmdir label{display:flex;gap:var(--s2);align-items:baseline;flex-wrap:wrap}.cmdir select{max-width:100%}.cmdh{font-weight:600}.cmneed{font-size:14px}
+.cmhits{display:flex;gap:var(--s4);flex-wrap:wrap}.cmhit{display:flex;align-items:center;gap:var(--s2)}.cmcount{display:inline-block;min-width:1.6em;text-align:center;font-size:20px;font-weight:600}
+.cmhp tr.dead td{color:var(--muted);text-decoration:line-through}.cmhp tr.dead td:nth-child(3){text-decoration:none;font-style:italic;font-weight:600}.cmhpin{width:11em}
+.cmspell{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;padding:var(--s1) 0;border-top:var(--hair) solid var(--hl)}.cmspn{width:8em}.chip{border:var(--hair) solid var(--line);padding:0 var(--s1);font-size:12px}

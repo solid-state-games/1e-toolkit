@@ -1,266 +1,128 @@
 "use strict";
-/* combat_state.js - DOM-free combat mode state (COMBAT_SPEC.md 8.2, 8.3, 9): the scene-metadata shape, the phase machine, surprise,
-   initiative, the per-round log and its fold. Uses surpriseSegments, dexSegments, dexReaction, initWinner from lib/combat_rules.js
-   (loaded first). Tested by test/toolkit.test.js. The GM tab (js/combat_ui.js) calls this and writes the result to scene metadata. */
+/* combat_state.js - DOM-free combat state (simple combat, TB 2026-11-16: no automation). Scene metadata key `combat`:
+   { v:2, on:1, rd:1, tn:1, w:-1, ro:[ids], nf:[roster idx], sd:[{n,ra,sr,in,ov,et,m:[roster idx]}], pr:[[a,t,wa,wt,acForA,acForT]], ht:[hits per side], lh:[last round's hits], sp:[[idx,name,rounds left]] }
+   Uses surpriseSegments, dexSegments, dexReaction, initWinner from lib/combat_rules.js (loaded first) and MONSTER_DETAILS (lib/monsters.js). Tested by test/toolkit.test.js. */
 const CombatState = (function () {
-    const NS = "io.github.solid-state-games.1e-toolkit", KEY = NS + "/combat", LOGP = NS + "/log/", UNDO = NS + "/undo", PRE = NS + "/pre", UNDO_MAX = 20;
-    const MAX_BYTES = 14000, KEEP = 6, MAX_SUM = 100;       // spec 8.3: 14 kB ceiling, last 6 rounds in detail, at most 100 summary lines
-    const SRC = ["sheet", "typed", "tray", "earlier"];                   // roll source codes stored in a log entry's flags
-    const SRC_LABEL = ["rolled in the sheet", "physical die typed in", "Owlbear Dice tray", "rolled earlier"];
-    const PHASE = ["Declare actions", "Initiative", "First side acts", "Second side acts", "End of round"];
-    // Toggles used so far. b = bit in `op`, the spec section 9 position (so later steps keep the same bits). on = RAW default (section 9).
-    // `op` stores only the difference from the defaults, so op 0 means all defaults and a toggle added later cannot upset a combat in progress.
-    // ponytail: bits 31 and up need a second integer; none of the toggles used so far is that high.
-    const TOGGLES = [
-        { k: "cm.rounds", b: 0, on: 1, t: "Round counter", d: "Count rounds (1 round = 1 minute = 10 segments).", pg: "PHB p.39; DMG p.61" },
-        { k: "cm.declare", b: 1, on: 0, t: "Declare actions", d: "Add a declare step at the start of each round.", pg: "DMG p.71, p.65" },
-        { k: "cm.surprise", b: 2, on: 1, t: "Surprise", d: "Roll surprise, d6 per side, before round 1.", pg: "DMG p.61-62; PHB p.102" },
-        { k: "cm.surprise-dex", b: 3, on: 1, t: "Dexterity reaction in surprise", d: "A PC's reaction adjustment shortens only that PC's lost segments.", pg: "DMG p.62, p.71; PHB p.11" },
-        { k: "cm.surprise-attacks", b: 4, on: 1, t: "Surprise attack allowance", d: "In a surprise segment the active side attacks as if it were a whole round; missiles at three times the rate.", pg: "DMG p.62, p.71; PHB p.103" },
-        { k: "cm.surprise-bar", b: 5, on: 1, t: "Surprised side cannot act", d: "The banner bars the surprised side during its lost segments.", pg: "DMG p.61" },
-        { k: "cm.initiative", b: 6, on: 1, t: "Roll initiative", d: "d6 per side each round, higher acts first, a tie is simultaneous. Off: the GM picks who goes first.", pg: "DMG p.62-63; PHB p.104" },
-        { k: "cm.phase-order", b: 7, on: 1, t: "Side order", d: "Winner acts, then the other side. Off: both sides act in any order.", pg: "DMG p.61, p.63" },
-        { k: "cm.multi-attack", b: 10, on: 1, t: "Attacks per round", d: "Refuse an attack after a token's last one this round (fighter 3/2 and 2/1, missile rate, monster attacks).", pg: "PHB p.25, p.38; DMG p.63" }];
-    const tog = function (name) { return TOGGLES.filter(function (t) { return t.k === name; })[0]; };
-    function isOn(c, name) { const t = tog(name); return !!(t.on ^ ((c.op >> t.b) & 1)); }
-    function setToggle(c, name, on) { if (isOn(c, name) !== !!on) c.op ^= (1 << tog(name).b); }
+    const NS = "io.github.solid-state-games.1e-toolkit", KEY = NS + "/combat", PRE = NS + "/pre", CSK = NS + "/cs";
 
     /* ----- the state ----- */
-    // ids: token ids (roster, stored once); side: 0 or 1 per id; names: two side names; ranges: surprise range per side (surprised on 1 to range).
+    // ids: token ids (roster, stored once); side: side number per id (a number past the last side = Not fighting); names: side names; ranges: surprised-on 1 to n per side
     function create(ids, side, names, ranges) {
-        const c = { v: 1, on: 1, rd: 0, ph: 1, sg: 0, op: 0, rs: 0, w: -1, ro: ids.slice(), nf: [],
-            sd: Array.apply(null, Array(Math.max(2, names.length))).map(function (x, i) { return { n: String(names[i] || (i ? "Foes" : "Party")).slice(0, 24), ra: clampRange(ranges ? ranges[i] : 2), sr: 0, sl: 0, in: 0, m: [] }; }) };
-        c.ak = {};   // last attack request handled per player
-        ids.forEach(function (id, n) { if (side[n] >= c.sd.length) c.nf.push(n); else c.sd[side[n] || 0].m.push(n); });   // a side number past the last side = Not fighting: in the roster, in no side
+        const n = Math.max(2, names.length);
+        const c = { v: 2, on: 1, rd: 1, tn: 1, w: -1, ro: ids.slice(), nf: [], pr: [], ht: [], lh: null, sp: [],
+            sd: Array.apply(null, Array(n)).map(function (x, i) { return { n: String(names[i] || (i ? "Foes" : "Party")).slice(0, 24), ra: clampRange(ranges ? ranges[i] : 2), sr: 0, in: 0, m: [] }; }) };
+        c.ht = c.sd.map(function () { return 0; });
+        ids.forEach(function (id, k) { if (side[k] >= c.sd.length) c.nf.push(k); else c.sd[side[k] || 0].m.push(k); });
         return c;
     }
     function clampRange(r) { r = Math.round(Number(r)); return isNaN(r) ? 2 : Math.max(0, Math.min(6, r)); }
-    // 0 and 1 are the sides, 2 is Not fighting (bystanders, captives, mounts, hirelings out of it): never rolled for, never in a count
-    function sideOf(c, n) { for (let i = 0; i < c.sd.length; i++) if (c.sd[i].m.indexOf(n) >= 0) return i; return c.sd.length; }
-    function moveToken(c, n, to) {
-        c.sd.forEach(function (s) { s.m = s.m.filter(function (x) { return x !== n; }); }); c.nf = (c.nf || []).filter(function (x) { return x !== n; });
-        (to >= c.sd.length ? c.nf : c.sd[to].m).push(n); c.sd.map(function (s) { return s.m; }).concat([c.nf]).forEach(function (a) { a.sort(function (x, y) { return x - y; }); });
+    // 0..n-1 are the sides, n is Not fighting (bystanders, captives, mounts, hirelings out of it): never rolled for, never counted
+    function sideOf(c, k) { for (let i = 0; i < c.sd.length; i++) if (c.sd[i].m.indexOf(k) >= 0) return i; return c.sd.length; }
+    function moveToken(c, k, to) {
+        c.sd.forEach(function (s) { s.m = s.m.filter(function (x) { return x !== k; }); }); c.nf = (c.nf || []).filter(function (x) { return x !== k; });
+        (to >= c.sd.length ? c.nf : c.sd[to].m).push(k); c.sd.map(function (s) { return s.m; }).concat([c.nf]).forEach(function (a) { a.sort(function (x, y) { return x - y; }); });
+        if (to >= c.sd.length) c.pr = c.pr.filter(function (p) { return p[0] !== k && p[1] !== k; });   // a token that is not fighting is in no pair
     }
-    const fighters = function (c) { return c.sd[0].m.concat(c.sd[1].m); };
-    const changed = function (c) { return TOGGLES.filter(function (t) { return isOn(c, t.k) !== !!t.on; }).length; };
-
-    /* ----- surprise (S01 to S06, DMG p.61-62) ----- */
-    const surpriseReady = function (c) { return c.sd.every(function (s) { return s.ra === 0 || s.sr > 0; }); };
-    const maxSl = function (c) { return Math.max(c.sd[0].sl, c.sd[1].sl); };
-    // Segments lost: surpriseSegments is the text reading (ruling A1): the surprised side loses its die score, both surprised subtract.
-    function resolveSurprise(c) {
-        if (!surpriseReady(c)) { c.sd[0].sl = c.sd[1].sl = 0; return false; }
-        const r = surpriseSegments(c.sd[0].sr, c.sd[0].ra, c.sd[1].sr, c.sd[1].ra);
-        c.sd[0].sl = r.a; c.sd[1].sl = r.b;
-        if (c.sg === 0 && maxSl(c) > 0) c.sg = 1;
-        if (maxSl(c) === 0) c.sg = 0;
-        if (c.sg > maxSl(c)) c.sg = maxSl(c);
-        return true;
-    }
-    function setRange(c, i, r) { c.sd[i].ra = clampRange(r); c.sd[i].ov = 1; if (c.sd[i].ra === 0) c.sd[i].sr = 0; return c.rd === 0 ? resolveSurprise(c) : false; }
-    function rollSurprise(c, i, v) { c.sd[i].sr = Math.max(1, Math.min(6, Math.round(v))); return resolveSurprise(c); }
-    // Individual segments lost: reaction (PHB p.11) takes segments off one PC only (DMG p.62, p.71).
-    function indivSegs(c, side, dex) { return isOn(c, "cm.surprise-dex") ? dexSegments(c.sd[side].sl, dexReaction(dex)) : c.sd[side].sl; }
-    function barred(c, i) { return c.rd === 0 && c.sg > 0 && isOn(c, "cm.surprise-bar") && c.sd[i].sl >= c.sg; }
-    function skipSurprise(c) { c.sd.forEach(function (s) { s.sr = 0; s.sl = 0; }); startRound(c, 1); }
-
-    /* ----- initiative (I01, I02, DMG p.62-63) ----- */
-    function rollInit(c, i, v) {
-        c.sd[i].in = Math.max(1, Math.min(6, Math.round(v)));
-        if (c.sd[0].in && c.sd[1].in) c.w = { A: 0, B: 1, tie: 2 }[initWinner(c.sd[0].in, c.sd[1].in)];
-        return c.w;
-    }
-    function setFirst(c, w) { c.w = w; }   // cm.initiative off: the GM says who acts first (2 = simultaneous)
-    const TIE_NOTE = "Tie: both sides act together and damage is applied to both. Where both use weapons: in the round melee is joined the longer weapon strikes first, in later rounds the lower speed factor first (display only for now).", TIE_PG = "DMG p.63, p.66; ruling A23";
-
-    /* ----- the phase machine (R02) ----- */
-    function startRound(c, n) { c.rd = n; c.sg = 0; c.w = -1; c.sd.forEach(function (s) { s.in = 0; }); c.ph = isOn(c, "cm.declare") ? 0 : 1; }
-    function advance(c) {
-        if (c.rd === 0) {
-            if (!surpriseReady(c)) return { ok: false, msg: "Roll surprise for both sides first, or skip surprise." };
-            if (c.sg >= maxSl(c)) startRound(c, 1); else c.sg++;
-            return { ok: true };
-        }
-        if (c.ph === 0) c.ph = 1;
-        else if (c.ph === 1) {
-            if (c.w < 0) return { ok: false, msg: isOn(c, "cm.initiative") ? "Roll initiative for both sides first." : "Pick which side goes first." };
-            c.ph = 2;
-        } else if (c.ph === 2) c.ph = (c.w === 2 || !isOn(c, "cm.phase-order")) ? 4 : 3;
-        else if (c.ph === 3) c.ph = 4;
-        else startRound(c, c.rd + 1);
-        return { ok: true };
-    }
-    // What the phase banner says: {a: headline, b: second line}
-    function banner(c) {
-        const n = function (i) { return c.sd[i].n; }, rd = isOn(c, "cm.rounds") ? "Round " + c.rd : "Combat";
-        if (c.rd === 0) {
-            if (!c.sg) return { a: "Surprise", b: surpriseReady(c) ? "No one is surprised" : "Rolling surprise" };
-            const lost = [0, 1].filter(function (i) { return barred(c, i); }), free = [0, 1].filter(function (i) { return !barred(c, i); });
-            return { a: "Surprise segment " + c.sg + " of " + maxSl(c), b: lost.length ? n(free[0]) + " acts. " + n(lost[0]) + " cannot act." : "Both sides may act." };
-        }
-        if (c.ph === 0) return { a: rd, b: "Declare actions" };
-        if (c.ph === 1) return { a: rd, b: "Rolling initiative" };
-        if (c.w === 2) return { a: rd, b: c.ph === 4 ? "End of round" : "Both sides act together (tie)" };
-        if (!isOn(c, "cm.phase-order")) return { a: rd, b: c.ph === 4 ? "End of round" : n(c.w) + " has initiative. Sides act in any order" };
-        if (c.ph === 2) return { a: rd, b: acts(n(c.w)) };
-        if (c.ph === 3) return { a: rd, b: acts(n(1 - c.w)) };
-        return { a: rd, b: "End of round" };
+    const fighters = function (c) { return [].concat.apply([], c.sd.map(function (s) { return s.m; })); };
+    // Right-click side assignment (GM): put tokens on side `to` or Not fighting. In a combat it edits the roster (adding tokens not yet in it); before a combat it records the choice in `pre`.
+    function sidesPatch(meta, ids, to) {
+        const r = read(meta), o = {};
+        if (r.c) {
+            const c = JSON.parse(JSON.stringify(r.c));
+            ids.forEach(function (id) { let k = c.ro.indexOf(id); if (k < 0) { c.ro.push(id); k = c.ro.length - 1; c.nf.push(k); } moveToken(c, k, to); });
+            o[KEY] = c;
+        } else { const pre = Object.assign({}, (meta || {})[PRE] || {}); ids.forEach(function (id) { pre[id] = to; }); o[PRE] = pre; }
+        return o;
     }
 
-    /* ----- the log (8.3): log/<round> = [[seg,kind,actor,target,roll,need,dmg,hpBefore,flags,text?],...]; log/s = summary lines ----- */
-    const entry = function (seg, kind, actor, roll, need, flags, text, who) { const e = [seg, kind, actor, -1, roll || 0, need || 0, 0, 0, flags || 0]; if (text || who) e.push(text || ""); if (who) e.push(who); return e; };
-    function logAdd(logs, rd, e) { (logs[rd] = logs[rd] || []).push(e); }
-    // kinds used now: 0 initiative, 1 surprise, 10 restriction switched (kind 10 is ours; 2 to 9 are the spec's later kinds)
-    function entryText(e, c) {
-        const sn = function (i) { return c && c.sd[i] ? c.sd[i].n : "Side " + (i + 1); };
-        if (e[9]) return e[9];
-        const how = " (" + SRC_LABEL[e[8] & 3] + (e[10] ? " by " + e[10] : "") + ")";
-        if (e[1] === 0) return sn(e[2]) + " rolled " + e[4] + " for initiative" + how;
-        if (e[1] === 1) return sn(e[2]) + " rolled " + e[4] + " for surprise, surprised on 1 to " + e[5] + how;
-        if (e[1] === 10) { const t = TOGGLES.filter(function (x) { return x.b === e[2]; })[0]; return "Restriction " + (t ? t.t : "bit " + e[2]) + " switched " + (e[4] ? "on" : "off"); }
-        return "Entry kind " + e[1];
-    }
-    const winnerOf = function (arr) {
-        const r = (arr || []).filter(function (e) { return e[1] === 0 && e[2] >= 0 && e[2] <= 1; }), last = {};
-        r.forEach(function (e) { last[e[2]] = e[4]; });
-        return last[0] && last[1] ? { A: 0, B: 1, tie: 2 }[initWinner(last[0], last[1])] : -1;
-    };
-    // [round, initiative winner (0, 1, 2 tie, -1 none), kills side 0, kills side 1, hp lost side 0, hp lost side 1]: the last four are filled once attacks exist
-    const summary = function (rd, arr) { return [Number(rd), winnerOf(arr), 0, 0, 0, 0]; };
-    const bytesOf = function (c, logs, sum, stack) { const o = {}; o[KEY] = c; Object.keys(logs).forEach(function (k) { o[LOGP + k] = logs[k]; }); if (sum.length) o[LOGP + "s"] = sum; if (stack && stack.length) o[UNDO] = stack; return JSON.stringify(o).length; };
-    // Fold rounds older than the last 6 into summaries; fold more early if the scene would pass the ceiling. Returns the round keys removed.
-    function fold(c, logs, sum, max, stack) {
-        const removed = [], keys = function () { return Object.keys(logs).map(Number).sort(function (a, b) { return a - b; }); };
-        const one = function (k) { sum.push(summary(k, logs[k])); delete logs[k]; removed.push(k); };
-        keys().filter(function (k) { return k <= c.rd - KEEP; }).forEach(one);
-        // over the ceiling: the oldest undo steps go first, then older rounds fold; the current round's log is never touched
-        while (stack && stack.length && bytesOf(c, logs, sum, stack) > (max || MAX_BYTES)) stack.shift();
-        for (let old = keys().filter(function (k) { return k < c.rd; })[0]; old !== undefined && bytesOf(c, logs, sum, stack) > (max || MAX_BYTES); old = keys().filter(function (k) { return k < c.rd; })[0]) one(old);
-        while (sum.length > MAX_SUM) sum.shift();
-        return removed;
+    /* ----- surprise: report only, blocks nothing (DMG p.61-62, ruling A1: segments lost = the surprised side's die, both surprised subtract) ----- */
+    function setRange(c, i, r) { c.sd[i].ra = clampRange(r); c.sd[i].ov = 1; }
+    function setSurprise(c, i, d) { c.sd[i].sr = d ? Math.max(1, Math.min(6, Math.round(d))) : 0; }
+    const surpriseReady = function (c) { return c.sd.slice(0, 2).every(function (s) { return s.ra === 0 || s.sr > 0; }); };
+    // segments lost by each of the first two sides
+    function surpriseSegs(c) { if (!surpriseReady(c)) return null; const r = surpriseSegments(c.sd[0].sr, c.sd[0].ra, c.sd[1].sr, c.sd[1].ra); return [r.a, r.b]; }
+    // the result in words, and the DEX line for each PC of the surprised side (PHB p.11 Table I via dexReaction; DMG p.62, p.71): dex(k) = score or null (no sheet)
+    function surpriseWords(c, dex, nameOf) {
+        const sg = surpriseSegs(c); if (!sg) return { text: "Roll or type both dice.", dex: [] };
+        const a = c.sd[0], b = c.sd[1], inA = a.ra && a.sr <= a.ra, inB = b.ra && b.sr <= b.ra;
+        if (!sg[0] && !sg[1]) return { text: inA && inB ? "Both sides surprised equally: no effect." : "Nobody is surprised.", dex: [] };
+        const s = sg[0] ? 0 : 1, o = 1 - s, n = sg[s];
+        const list = c.sd[s].m.map(function (k) { const d = dex(k); return d ? nameOf(k) + " (DEX " + d + "): " + (function () { const l = dexSegments(n, dexReaction(d)); return l ? "loses " + l + (l > 1 ? " segments" : " segment") : "not surprised"; })() : null; }).filter(Boolean);
+        return { text: c.sd[s].n + " surprised: lose " + n + (n > 1 ? " segments" : " segment") + "; " + c.sd[o].n + " may act in segment" + (n > 1 ? "s 1-" + n : " 1") + ".", dex: list };
     }
 
-    /* ----- one-button steps (the GM card): each step does its work and moves on ----- */
-    const acts = function (n) { return n + (/s$/i.test(n) ? " act" : " acts"); };   // ponytail: plural by the final s
-    function stepKind(c) { if (c.rd === 0) return surpriseReady(c) && maxSl(c) > 0 ? "seg" : "sur"; return ["decl", "init", "first", "second", "end"][c.ph]; }
-    // sides that must roll a d6 for the current step
-    function needs(c) {
-        if (c.rd === 0 && stepKind(c) === "sur") return surpriseReady(c) ? [] : [0, 1].filter(function (i) { return c.sd[i].ra > 0; });
-        return c.rd > 0 && c.ph === 1 && isOn(c, "cm.initiative") ? [0, 1] : [];
+    /* ----- initiative (DMG p.62-63): d6 per side, higher first, a tie is simultaneous ----- */
+    function rollInit(c, i, v) { c.sd[i].in = Math.max(1, Math.min(6, Math.round(v))); if (c.sd[0].in && c.sd[1].in) c.w = { A: 0, B: 1, tie: 2 }[initWinner(c.sd[0].in, c.sd[1].in)]; return c.w; }
+    const TIE_NOTE = "Tie: both sides act together and damage is applied to both. Where both use weapons: in the round melee is joined the longer weapon strikes first, in later rounds the lower speed factor first (DMG p.63, p.66).";
+    function initText(c) {
+        if (c.w < 0) return "";
+        const sc = c.sd[0].n + " " + c.sd[0].in + ", " + c.sd[1].n + " " + c.sd[1].in;
+        return sc + (c.w === 2 ? ": tie, both sides act together" : ": " + c.sd[c.w].n + " goes first");
     }
-    const freeSides = function (c, i) { return [0, 1].filter(function (x) { return c.sd[x].sl < i; }); };
-    function primary(c) {
-        const k = stepKind(c), n = function (i) { return c.sd[i].n; };
-        if (k === "sur") return "Roll surprise";
-        if (k === "seg") { const f = freeSides(c, c.sg); return f.length === 1 ? acts(n(f[0])) + ": done" : "Segment " + c.sg + ": done"; }
-        if (k === "decl") return "Declare actions: done";
-        if (k === "init") return "Roll initiative";
-        if (k === "end") return "Next round";
-        if (c.w === 2) return "Both sides act: done";
-        if (!isOn(c, "cm.phase-order")) return "Sides act: done";
-        return acts(n(k === "first" ? c.w : 1 - c.w)) + ": done";
+
+    /* ----- rounds and turns: 1 round = 1 minute, 1 turn = 10 rounds (PHB p.39) ----- */
+    const roundInTurn = function (c) { return ((c.rd - 1) % 10) + 1; };
+    // Next round: this round's hits become "last round", hits and initiative clear, spell countdowns tick. Returns the names of spells that ran out.
+    function nextRound(c) {
+        c.lh = c.ht.slice(); c.ht = c.sd.map(function () { return 0; }); c.w = -1; c.sd.forEach(function (s) { s.in = 0; });
+        c.rd++; c.tn = Math.floor((c.rd - 1) / 10) + 1;
+        const done = []; c.sp.forEach(function (s) { s[2]--; if (s[2] <= 0) done.push(s); }); c.sp = c.sp.filter(function (s) { return s[2] > 0; });
+        return done;
     }
-    // the round's steps in order: [{k, label, st: done|cur|todo, res}]
-    function stepList(c) {
-        const n = function (i) { return c.sd[i].n; }, L = [];
-        if (c.rd === 0) {
-            const ready = surpriseReady(c) && maxSl(c) > 0, m = maxSl(c);
-            L.push({ k: "sur", label: "Surprise rolls", st: ready ? "done" : "cur", res: ready ? c.sd.filter(function (s) { return s.sl > 0; }).map(function (s) { return s.n + " lose " + s.sl; }).join(", ") : "" });
-            if (ready) for (let i = 1; i <= m; i++) { const f = freeSides(c, i); L.push({ k: "seg", label: "Segment " + i + ": " + (f.length === 1 ? acts(n(f[0])) : "both sides may act"), st: i < c.sg ? "done" : i === c.sg ? "cur" : "todo", res: "" }); }
-            L.push({ k: "r1", label: "Round 1: initiative", st: "todo", res: "" });
-            return L;
-        }
-        const add = function (k, p, label, res) { L.push({ k: k, label: label, st: p < c.ph ? "done" : p === c.ph ? "cur" : "todo", res: p < c.ph ? res || "" : "" }); };
-        if (isOn(c, "cm.declare")) add("decl", 0, "Declare actions");
-        const on = isOn(c, "cm.initiative"), both = c.sd[0].in && c.sd[1].in;
-        add("init", 1, on ? "Roll initiative" : "Who goes first", c.w < 0 ? "" : c.w === 2 ? "Tie" + (both ? " (" + c.sd[0].in + " each)" : "") : n(c.w) + (on && both ? " wins (" + Math.max(c.sd[0].in, c.sd[1].in) + " to " + Math.min(c.sd[0].in, c.sd[1].in) + ")" : " first"));
-        if (c.w === 2) add("first", 2, "Both sides act together");
-        else if (!isOn(c, "cm.phase-order")) add("first", 2, "Sides act in any order");
-        else if (c.w >= 0) { add("first", 2, acts(n(c.w))); add("second", 3, acts(n(1 - c.w))); }
-        else { add("first", 2, "First side acts"); add("second", 3, "Second side acts"); }
-        add("end", 4, "End of round");
-        return L;
+
+    /* ----- who is fighting whom: pairs [a, t, weapon of a, weapon of t, AC override for a's target, AC override for t's target] (roster indexes) ----- */
+    function addPair(c, a, t) {
+        if (a === t || a < 0 || t < 0 || c.nf.indexOf(a) >= 0 || c.nf.indexOf(t) >= 0) return false;
+        if (c.pr.some(function (p) { return (p[0] === a && p[1] === t) || (p[0] === t && p[1] === a); })) return false;
+        c.pr.push([a, t, 0, 0, null, null]); return true;
     }
-    // Do the current step and move on. vals: one d6 per side in needs(c); src: roll source; who: names of whoever rolled (tray).
-    function step(c, logs, vals, src, who) {
-        const k = stepKind(c), nd = needs(c), nm = function (i) { return c.sd[i].n; };
-        if (nd.length && (!vals || vals.length < nd.length)) return { ok: false, need: nd };
-        if (k === "init" && !isOn(c, "cm.initiative")) return { ok: false, first: true };
-        if (k === "sur") {
-            nd.forEach(function (i, j) { logAdd(logs, 0, entry(0, 1, i, vals[j], c.sd[i].ra, src, "", who && who[j])); rollSurprise(c, i, vals[j]); });
-            const m = maxSl(c), s = c.sd[0].sl ? 0 : 1;
-            logAdd(logs, 0, entry(0, 1, -1, 0, 0, 0, m ? nm(s) + " lose " + m + (m > 1 ? " segments." : " segment.") : "No one is surprised."));
-            if (!m) startRound(c, 1);
-        } else if (k === "init") {
-            nd.forEach(function (i, j) { logAdd(logs, c.rd, entry(0, 0, i, vals[j], 0, src, "", who && who[j])); rollInit(c, i, vals[j]); });
-            logAdd(logs, c.rd, entry(0, 0, -1, 0, 0, 0, c.w === 2 ? "Tie: both sides act together." : nm(c.w) + " wins initiative."));
-            c.ph = 2;
-        } else if (k === "seg") { if (c.sg >= maxSl(c)) startRound(c, 1); else c.sg++; }
-        else advance(c);
-        return { ok: true };
+    const removePair = function (c, k) { c.pr.splice(k, 1); };
+    // Right-click or tool: add a pair by token ids; both must be in the roster and fighting. Returns {patch} or {msg}.
+    function pairPatch(meta, aId, tId) {
+        const r = read(meta); if (!r.c) return { msg: "Start combat first." };
+        const c = JSON.parse(JSON.stringify(r.c)), a = c.ro.indexOf(aId), t = c.ro.indexOf(tId);
+        if (a < 0 || t < 0) return { msg: "Both tokens must be in the combat (right-click: Combat side)." };
+        if (!addPair(c, a, t)) return { msg: a === t ? "A token cannot fight itself." : c.nf.indexOf(a) >= 0 || c.nf.indexOf(t) >= 0 ? "A token that is not fighting cannot be paired." : "Those two are already paired." };
+        const o = {}; o[KEY] = c; return { patch: o };
     }
-    // Surprise dice rolled before this scene (Encounters tab, Turnmaster, the table): dice[side] = d6 or 0. Same maths as rolling. A held encounter (later step) calls this.
-    function applyEarlierSurprise(c, logs, dice) { return step(c, logs, needs(c).map(function (i) { return dice[i]; }), 3, []); }
-    function noSurprise(c, logs) { skipSurprise(c); logAdd(logs, 0, entry(0, 1, -1, 0, 0, 0, "No surprise: round 1 follows.")); }
-    // cm.initiative off: the GM names who goes first (0, 1, or 2 = together)
-    function stepFirst(c, logs, w) { setFirst(c, w); c.ph = 2; logAdd(logs, c.rd, entry(0, 0, -1, 0, 0, 0, w === 2 ? "Both sides act together." : c.sd[w].n + " goes first.")); }
-    // which sides may act right now (for "Your side acts now")
-    function actingSides(c) {
-        if (c.rd === 0) return c.sg > 0 ? [0, 1].filter(function (i) { return !barred(c, i); }) : [];
-        if (c.ph === 2) return c.w === 2 || !isOn(c, "cm.phase-order") ? [0, 1] : c.w >= 0 ? [c.w] : [];
-        return c.ph === 3 && c.w >= 0 ? [1 - c.w] : [];
+    // pairs that include a token that is down (a monster at 0 hit points or less) go away
+    function dropDown(c, down) { c.pr = c.pr.filter(function (p) { return down.indexOf(p[0]) < 0 && down.indexOf(p[1]) < 0; }); }
+
+    /* ----- hits this round per side: a tally for the GM; twice as often as the other side, and at least 2, means a morale check (DMG p.67 footnote) ----- */
+    function hit(c, i, d) { c.ht[i] = Math.max(0, (c.ht[i] || 0) + d); }
+    // a side hitting at least twice as often as another (and at least twice in all) means the other side checks morale
+    function moraleFlags(c) {
+        const out = [];
+        c.sd.forEach(function (s, i) { const mine = c.ht[i] || 0; if (mine < 2) return; c.sd.forEach(function (o, j) { if (j !== i && mine >= 2 * (c.ht[j] || 0)) out.push(o.n + " check morale: " + s.n + " hit twice as often (DMG p.67)."); }); });
+        return out;
     }
-    // Undo that survives a reload: a stack of the last 20 steps in scene metadata (key `undo`). Each entry is the step fields before the step,
-    // how many log lines the step added to that round, and `x` = whatever a later step (damage) needs put back. Take a snapshot BEFORE a step,
-    // call pushUndo AFTER it. Every step that can be walked back goes through pushUndo.
-    function takeSnap(c, logs) { return { rd: c.rd, ph: c.ph, sg: c.sg, w: c.w, s: c.sd.map(function (x) { return [x.sr, x.sl, x.in]; }), n: (logs[c.rd] || []).length }; }
-    function pushUndo(stack, before, logs, label, extra) {
-        const e = { l: label, rd: before.rd, ph: before.ph, sg: before.sg, w: before.w, s: before.s, n: before.n, k: (logs[before.rd] || []).length - before.n };
-        if (extra !== undefined) e.x = extra;
-        stack.push(e); while (stack.length > UNDO_MAX) stack.shift();
-        return stack;
+
+    /* ----- spell rounds on PCs (optional): [roster idx, name, rounds left] ----- */
+    function addSpell(c, k, name, rounds) { rounds = Math.round(Number(rounds)); name = String(name || "").trim().slice(0, 30); if (!name || !(rounds >= 1)) return false; c.sp.push([k, name, Math.min(rounds, 999)]); return true; }
+
+    /* ----- hit points (GM only, monsters and NPCs; PCs keep their sheet hit points): item `cs` = {h:[hp,max]} ----- */
+    // "-6" or "+3" changes it, a plain number sets it (and raises the maximum if it is higher). Returns the new [hp,max] or null when the text is no number.
+    function hpEdit(cur, text) {
+        const t = String(text).trim(); if (!/^[+-]?\d+$/.test(t)) return null;
+        const n = parseInt(t, 10);
+        if (!cur) return /^\d+$/.test(t) ? [n, n] : null;   // no maximum yet: the first plain number is the maximum
+        if (/^[+-]/.test(t)) return [cur[0] + n, cur[1]];
+        return [n, Math.max(cur[1], n)];
     }
-    // Walk back one step: restore its fields, drop the log lines it added and any later rounds, log kind 9. Returns {label, removed, x} or null.
-    function undo(c, logs, stack) {
-        const e = stack.pop(); if (!e) return null;
-        const removed = [];
-        Object.keys(logs).map(Number).filter(function (r) { return r > e.rd; }).forEach(function (r) { delete logs[r]; removed.push(r); });
-        if (logs[e.rd]) logs[e.rd].splice(e.n, e.k);
-        c.rd = e.rd; c.ph = e.ph; c.sg = e.sg; c.w = e.w; e.s.forEach(function (x, i) { c.sd[i].sr = x[0]; c.sd[i].sl = x[1]; c.sd[i].in = x[2]; });
-        logAdd(logs, c.rd, entry(0, 9, -1, 0, 0, 0, "GM undid: " + e.l));
-        return { label: e.l, removed: removed, x: e.x };
+    const isDead = function (h) { return !!h && h[0] <= 0; };   // 0 or less is dead (TB's table, PHB p.105)
+    // hit dice "3+3", "1-1", "4": n d8 and the modifier, at least 1 hit point (MM; a half die and the like count as one d8)
+    function rollHd(hd, rng) {
+        rng = rng || Math.random; const m = /^(\d+)([+-]\d+)?/.exec(String(hd)); if (!m) return null;
+        let n = Number(m[1]), mod = m[2] ? Number(m[2]) : 0, t = mod; if (n < 1) n = 1;
+        for (let i = 0; i < n; i++) t += 1 + Math.floor(rng() * 8);
+        t = Math.max(1, t); return [t, t];
     }
-    // the log a person sees: only the last roll a side made for each kind (a replaced roll is hidden)
-    function visible(list) {
-        const last = {}, roll = function (e) { return (e[1] === 0 || e[1] === 1) && e[2] >= 0; };
-        (list || []).forEach(function (e, i) { if (roll(e)) last[e[1] + ":" + e[2]] = i; });
-        return (list || []).filter(function (e, i) { return !roll(e) || last[e[1] + ":" + e[2]] === i; });
-    }
-    // Dice tray: take the first NEW single d6 from anyone. A roll counts as new when anything the Dice extension keeps in that
-    // player's metadata differs from what was captured when the step asked, so a stale last roll is never reused.
-    const TRAY = "rodeo.owlbear.dice/", sigOf = function (md) { md = md || {}; return JSON.stringify(Object.keys(md).filter(function (k) { return k.indexOf(TRAY) === 0; }).sort().map(function (k) { return [k, md[k]]; })); };
-    function dieOf(md, max) {
-        let v = (md || {})[TRAY + "rollValues"];
-        if (v && typeof v === "object" && !Array.isArray(v)) v = Object.keys(v).map(function (k) { return v[k]; });
-        if (!Array.isArray(v) || v.length !== 1) return null;
-        v = v[0] && typeof v[0] === "object" ? v[0].value : v[0];
-        return v >= 1 && v <= (max || 6) && v === Math.floor(v) ? v : null;
-    }
-    function traySnap(players) { const o = {}; players.forEach(function (p) { o[p.id] = sigOf(p.metadata); }); return o; }
-    // wants[j] = ids allowed to roll for need j (null once filled). Takes the first new d6 from an allowed roller; rolls from anyone else are ignored.
-    function trayPick(base, players, wants, max) {
-        for (let i = 0; i < players.length; i++) {
-            const p = players[i], sg = sigOf(p.metadata); if (sg === base[p.id]) continue;
-            base[p.id] = sg; const v = dieOf(p.metadata, max); if (!v) continue;
-            for (let j = 0; j < wants.length; j++) if (wants[j] && wants[j].indexOf(p.id) >= 0) return { j: j, id: p.id, name: p.name, value: v };
-        }
-        return null;
-    }
-    // Who may roll for a side or a token: its owner(s), else the GM. owners[n] = player id of roster token n ("" = none). Step 2 reuses this for single rolls.
-    function rollerFor(c, owners, gmId, target) {
-        const ids = target.token !== undefined ? [owners[target.token] || ""] : c.sd[target.side].m.map(function (n) { return owners[n] || ""; });
-        const out = ids.filter(function (x, k) { return x && ids.indexOf(x) === k; });
-        return out.length ? out : [gmId];
+    // side casualties: Goblins down: 1 of 3 (33%), with the DMG p.67 morale reminders
+    function casualties(c, isDownIdx) {
+        return c.sd.map(function (s) {
+            const total = s.m.length, down = s.m.filter(isDownIdx).length, pct = total ? Math.round(down * 100 / total) : 0;
+            return { side: s.n, down: down, total: total, pct: pct, text: s.n + " down: " + down + " of " + total + " (" + pct + "%)", morale: total && down * 2 >= total ? "50% lost: morale +15 (DMG p.67)" : total && down * 4 >= total ? "25% lost: morale +5 (DMG p.67)" : "" };
+        });
     }
 
     /* ----- surprise ranges from the best member of each side (DMG p.61-62, PHB p.16, 17, 24, MM) ----- */
@@ -296,46 +158,28 @@ const CombatState = (function () {
         });
     }
     function applyRanges(c, derived) { derived.forEach(function (d, i) { if (!c.sd[i].ov) c.sd[i].ra = d.ra; }); }
-    // Right-click side assignment (GM): put tokens on side `to` (0..n-1) or Not fighting (n or more). In a combat it edits the roster, and adds
-    // tokens not yet in it; before a combat it records the choice in `pre`, which the set-up panel and Start combat read. Returns the metadata patch.
-    function sidesPatch(meta, ids, to) {
-        const r = read(meta), o = {};
-        if (r.c) {
-            const c = JSON.parse(JSON.stringify(r.c)); c.nf = c.nf || [];
-            ids.forEach(function (id) { let n = c.ro.indexOf(id); if (n < 0) { c.ro.push(id); n = c.ro.length - 1; c.nf.push(n); } moveToken(c, n, to); });
-            o[KEY] = c;
-        } else { const pre = Object.assign({}, (meta || {})[PRE] || {}); ids.forEach(function (id) { pre[id] = to; }); o[PRE] = pre; }
+
+    /* ----- scene metadata in and out ----- */
+    const LEGACY = [NS + "/undo", NS + "/log/"];
+    function read(meta) { meta = meta || {}; const c = meta[KEY]; return { c: c && c.on ? (c.v === 2 ? c : migrate(c)) : null }; }
+    // An earlier build's combat (phases, logs) keeps its sides, roster, ranges and round; everything else is dropped.
+    function migrate(o) {
+        const c = create(o.ro || [], (o.ro || []).map(function (id, k) { for (let i = 0; i < o.sd.length; i++) if (o.sd[i].m.indexOf(k) >= 0) return i; return o.sd.length; }), o.sd.map(function (s) { return s.n; }), o.sd.map(function (s) { return s.ra; }));
+        c.rd = Math.max(1, o.rd || 1); c.tn = Math.floor((c.rd - 1) / 10) + 1; o.sd.forEach(function (s, i) { if (s.ov) { c.sd[i].ov = 1; } if (s.et) c.sd[i].et = s.et; }); return c;
+    }
+    // scene keys an earlier build left behind: undo, every log/<round>, and a combat key in the old shape
+    function cleanPatch(meta) {
+        const o = {}; Object.keys(meta || {}).forEach(function (k) { if (k === LEGACY[0] || k.indexOf(LEGACY[1]) === 0) o[k] = undefined; });
+        const c = (meta || {})[KEY]; if (c && c.on && c.v !== 2) o[KEY] = migrate(c); else if (c && !c.on) o[KEY] = undefined;
         return o;
     }
-    // read everything back out of scene metadata
-    function read(meta) {
-        meta = meta || {}; const logs = {}; let sum = [];
-        Object.keys(meta).forEach(function (k) { if (k.indexOf(LOGP) === 0) { const r = k.slice(LOGP.length); if (r === "s") sum = meta[k]; else logs[r] = meta[k]; } });
-        return { c: meta[KEY] && meta[KEY].on ? meta[KEY] : null, logs: logs, sum: sum, undo: Array.isArray(meta[UNDO]) ? meta[UNDO] : [] };
-    }
-    // the metadata patch to write: combat, the kept rounds' logs, the summary if folded; removed keys are set undefined (clears them)
-    function patch(c, logs, sum, removed, stack) {
-        const o = {}; o[KEY] = c;
-        if (stack !== undefined) o[UNDO] = stack.length ? stack : undefined;
-        Object.keys(logs).forEach(function (k) { o[LOGP + k] = logs[k]; });   // all kept rounds: a step can log into round 0 as round 1 starts
-        if (removed && removed.length) { o[LOGP + "s"] = sum; removed.forEach(function (k) { o[LOGP + k] = undefined; }); }
-        return o;
-    }
-    // end combat: every key we own goes
-    function clearPatch(meta) { const o = {}; Object.keys(meta || {}).forEach(function (k) { if (k === KEY || k === UNDO || k === PRE || k.indexOf(LOGP) === 0) o[k] = undefined; }); o[KEY] = undefined; return o; }
-    function exportText(c, logs, sum, nameOf) {
-        const L = ["1e Toolkit combat log", "Sides: " + c.sd.map(function (s) { return s.n + " (" + s.m.map(nameOf).join(", ") + ")"; }).join(" | "), "Ended in round " + c.rd, ""];
-        if (sum.length) { L.push("Earlier rounds (summary: round, initiative winner, kills, hit points lost):"); sum.forEach(function (s) { L.push("  round " + s[0] + ": " + (s[1] === 2 ? "tie" : s[1] < 0 ? "no initiative" : c.sd[s[1]].n + " won initiative")); }); L.push(""); }
-        Object.keys(logs).map(Number).sort(function (a, b) { return a - b; }).forEach(function (k) {
-            L.push(k === 0 ? "Surprise segments" : "Round " + k);
-            logs[k].forEach(function (e) { L.push("  " + (e[0] ? "segment " + e[0] + ": " : "") + entryText(e, c)); });
-        });
-        return L.join("\n") + "\n";
-    }
-    return { NS: NS, KEY: KEY, LOGP: LOGP, MAX_BYTES: MAX_BYTES, KEEP: KEEP, SRC: SRC, SRC_LABEL: SRC_LABEL, PHASE: PHASE, TOGGLES: TOGGLES, TIE_NOTE: TIE_NOTE, TIE_PG: TIE_PG, fighters: fighters, changed: changed, acts: acts, stepKind: stepKind, needs: needs, primary: primary, stepList: stepList, step: step, stepFirst: stepFirst, applyEarlierSurprise: applyEarlierSurprise, noSurprise: noSurprise, actingSides: actingSides, takeSnap: takeSnap, undo: undo, visible: visible, sigOf: sigOf, dieOf: dieOf, traySnap: traySnap, pushUndo: pushUndo, sidesPatch: sidesPatch, UNDO: UNDO, PRE: PRE, trayPick: trayPick, rollerFor: rollerFor, monsterOf: monsterOf, sideFacts: sideFacts, deriveRanges: deriveRanges, applyRanges: applyRanges,
-        isOn: isOn, setToggle: setToggle, create: create, sideOf: sideOf, moveToken: moveToken, clampRange: clampRange, surpriseReady: surpriseReady, maxSl: maxSl, resolveSurprise: resolveSurprise,
-        setRange: setRange, rollSurprise: rollSurprise, indivSegs: indivSegs, barred: barred, skipSurprise: skipSurprise, rollInit: rollInit, setFirst: setFirst, startRound: startRound,
-        advance: advance, banner: banner, entry: entry, logAdd: logAdd, entryText: entryText, winnerOf: winnerOf, bytesOf: bytesOf, fold: fold, read: read, patch: patch,
-        clearPatch: clearPatch, exportText: exportText };
+    // old per-token attack counts in `cs` ({rs, at, mx}) are no longer used
+    const oldCs = function (cs) { return !!cs && (cs.rs !== undefined || cs.at !== undefined || cs.mx !== undefined); };
+    function clearPatch(meta) { const o = {}; Object.keys(meta || {}).forEach(function (k) { if (k === KEY || k === PRE || k === NS + "/undo" || k.indexOf(NS + "/log/") === 0) o[k] = undefined; }); o[KEY] = undefined; return o; }
+    return { NS: NS, KEY: KEY, PRE: PRE, CS: CSK, TIE_NOTE: TIE_NOTE, create: create, clampRange: clampRange, sideOf: sideOf, moveToken: moveToken, fighters: fighters, sidesPatch: sidesPatch,
+        setRange: setRange, setSurprise: setSurprise, surpriseReady: surpriseReady, surpriseSegs: surpriseSegs, surpriseWords: surpriseWords, rollInit: rollInit, initText: initText,
+        roundInTurn: roundInTurn, nextRound: nextRound, addPair: addPair, removePair: removePair, pairPatch: pairPatch, dropDown: dropDown, hit: hit, moraleFlags: moraleFlags, addSpell: addSpell,
+        hpEdit: hpEdit, isDead: isDead, rollHd: rollHd, casualties: casualties, monsterOf: monsterOf, sideFacts: sideFacts, deriveRanges: deriveRanges, applyRanges: applyRanges,
+        read: read, migrate: migrate, cleanPatch: cleanPatch, oldCs: oldCs, clearPatch: clearPatch };
 })();
 if (typeof module !== "undefined" && module.exports) module.exports = CombatState;

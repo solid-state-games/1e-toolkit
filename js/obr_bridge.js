@@ -6,9 +6,9 @@ else OBR = (await import('../vendor/obr-sdk.js')).default;
 window.OBRX = OBR;
 window.TOOLKIT_DEV = dev === 'gm' || dev === 'player' ? dev : null;
 window.startToolkit();
-if (window.TOOLKIT_DEV && new URLSearchParams(location.search).get('view') !== 'banner' && new URLSearchParams(location.search).get('view') !== 'sheet') (await import('./banner_sync.js')).watchBanner(OBR, 'io.github.solid-state-games.1e-toolkit', new URL('index.html?view=banner&dev=' + dev, location.href).href); // dev: stands in for background.js
-if (window.TOOLKIT_DEV && !['banner', 'sheet'].includes(new URLSearchParams(location.search).get('view'))) (await import('./combat_menus.js')).installCombatMenus(OBR, 'io.github.solid-state-games.1e-toolkit', p => new URL(p, location.href).href); // dev: stands in for background.js
-if (window.TOOLKIT_DEV && !['banner', 'sheet'].includes(new URLSearchParams(location.search).get('view'))) {   // dev: stands in for background.js; a stub builder makes plain items
-    const stub = () => { const it = { type: 'SHAPE' }; const p = new Proxy({}, { get: (_, k) => k === 'build' ? () => it : v => { it[k] = v; return p; } }); return p; };
-    (await import('./combat_dots.js')).installCombatDots(OBR, 'io.github.solid-state-games.1e-toolkit', stub);
+// dev: stands in for background.js (GM page only; the sheet modal does not need it). A stub builder makes plain items.
+if (window.TOOLKIT_DEV === 'gm' && q.get('view') !== 'sheet') {
+    const NS = 'io.github.solid-state-games.1e-toolkit', stub = () => { const it = { type: 'LABEL' }; const p = new Proxy({}, { get: (_, k) => k === 'build' ? () => it : v => { it[k] = v; return p; } }); return p; };
+    (await import('./combat_menus.js')).installCombatMenus(OBR, NS, p => new URL(p, location.href).href);
+    (await import('./combat_hp.js')).installCombatHp(OBR, NS, stub);
 }
