@@ -1,18 +1,20 @@
 "use strict";
-/* combat_ui.js - the GM "Combat" card (simple combat, TB 2026-11-16: nothing is automated). Set-up behind the gear (sides, surprise ranges), Start and End combat,
-   a round bar (Round, Turn, Roll initiative, Next round), an optional Surprise box (report only), who is fighting whom (pairs, to-hit both ways), hits this round,
-   GM-only hit points for NPCs and monsters, casualties, and optional spell rounds on PCs. Players see nothing of combat.
+/* combat_ui.js - the GM "Combat" card (simple combat, TB 2026-11-16). Set-up behind the gear (sides, surprise ranges), Start and End combat,
+   a round bar (Round, Turn, Roll initiative, Next round), an optional Surprise box (report only), a Party | Foes table with one row per token (hit points, target,
+   to hit, damage, Roll and Apply), hits this round, casualties, optional spell rounds on PCs, and the players' sheet rolls. Players see nothing else of combat.
    Rules and state are in js/combat_state.js and js/combat_attack.js (DOM-free). Only the GM writes scene metadata.
    OBR calls used: scene.getMetadata/setMetadata/onMetadataChange/onReadyChange/isReady, scene.items.getItems/updateItems/onChange, party.getPlayers/onChange (SDK 3.1.0). */
 const CombatUI = (function () {
     const CS = CombatState, CA = CombatAttack;
-    let cur = { c: null, meta: {} }, items = [], players = [], gmRoot = null, setupOpen = null, notice = [];
+    let cur = { c: null, meta: {} }, items = [], players = [], gmRoot = null, setupOpen = null, notice = [], hpTab = 0, rolls = [], surOpen = false, splOpen = false;
     let draft = { n: ["Party", "Foes"], r: [undefined, undefined], et: [0, 0] };
     const own = function (i) { return (i.metadata || {})[SheetRules.OWNER_KEY]; };
     const byId = function (id) { return items.filter(function (x) { return x.id === id; })[0]; };
     const nameOf = function (id) { const it = byId(id); return it ? it.name || "Unnamed token" : "token (gone)"; };
     const sheetOf = function (it) { return it && (it.metadata || {})[SheetRules.KEY]; };
-    const hpOf = function (it) { const k = it && (it.metadata || {})[CS.CS]; return k && k.h ? k.h : null; };
+    const csOf = function (it) { return (it && (it.metadata || {})[CS.CS]) || {}; };
+    // hit points: a PC's are on its sheet (hp, hm; GM edits them for an absent player), an NPC's or monster's on its token (`cs`.h, GM only)
+    const hpOf = function (it) { const sh = sheetOf(it); return sh ? [Number(sh.hp) || 0, Number(sh.hm) || 0] : (csOf(it).h || null); };
     const isPc = function (it) { return !!sheetOf(it); };
     const dexOf = function (k) { const sh = sheetOf(byId(cur.c.ro[k])); return sh && sh.sc && sh.sc[3] ? sh.sc[3] : null; };
     const defSide = function (it) { return sheetOf(it) || own(it) || players.some(function (p) { return p.id === it.createdUserId; }) ? 0 : 1; };
@@ -21,7 +23,9 @@ const CombatUI = (function () {
     const inf = function (t) { return t ? ' <span class="inf" title="' + esc(t) + '" aria-label="' + esc(t) + '">i</span>' : ""; };
     const ic = function (n) { return '<i class="ic ic-' + n + '" aria-hidden="true"></i>'; };
     const opt = function (v, t, sel) { return '<option value="' + v + '"' + (String(v) === String(sel) ? " selected" : "") + ">" + esc(t) + "</option>"; };
-    const downIdx = function (k) { const it = byId(cur.c.ro[k]); return !isPc(it || {}) && CS.isDead(hpOf(it)); };
+    // down: 0 or less (PHB p.105); a PC with no maximum set is not counted
+    const isDown = function (it) { const h = hpOf(it); return !!h && h[0] <= 0 && (!isPc(it) || h[1] > 0); };
+    const downIdx = function (k) { const it = byId(cur.c.ro[k]); return !!it && isDown(it); };
 
     function memberOf(it) { const sh = sheetOf(it); return { name: it.name || "Unnamed token", cls: sh && sh.cl ? sh.cl : [], race: sh ? sh.race || "" : "", mon: sh ? null : CS.monsterOf(it.name) }; }
     function derived() {
@@ -35,12 +39,13 @@ const CombatUI = (function () {
     function ingest(meta) { cur = { meta: meta || {}, c: CS.read(meta).c }; render(); }
     async function save(c) { const o = {}; o[CS.KEY] = c; await TK.OBR.scene.setMetadata(o); const meta = Object.assign({}, cur.meta); meta[CS.KEY] = c; ingest(meta); }
     async function mutate(fn) { const c = JSON.parse(JSON.stringify(cur.c)); fn(c); try { await save(c); } catch (e) { say(e.message, "ERROR"); } }
-    // a monster's hit points live on its token (`cs` = {h:[hp,max]}, GM only); setting them also drops pairs that include a token that is down
-    async function setHp(id, h) {
-        await TK.OBR.scene.items.updateItems([id], function (d) { d[0].metadata[CS.CS] = { h: h }; }).catch(function (e) { say(e.message, "ERROR"); });
+    // token state `cs` (item metadata, GM only): monsters' {h:[hp,max]}, and for every row its {tg: target token id, wi: weapon, ac: typed target AC}
+    function setCs(id, patch) { return TK.OBR.scene.items.updateItems([id], function (d) { d[0].metadata[CS.CS] = Object.assign({}, d[0].metadata[CS.CS] || {}, patch); }).catch(function (e) { say(e.message, "ERROR"); }); }
+    // PCs: the sheet's hp; monsters and NPCs: cs.h
+    async function setHp(it, h) {
+        if (isPc(it)) await TK.OBR.scene.items.updateItems([it.id], function (d) { d[0].metadata[SheetRules.KEY].hp = h[0]; }).catch(function (e) { say(e.message, "ERROR"); });
+        else await setCs(it.id, { h: h });
         await loadItems();
-        const down = cur.c ? cur.c.ro.map(function (x, k) { return k; }).filter(downIdx) : [];
-        if (down.length && cur.c.pr.some(function (p) { return down.indexOf(p[0]) >= 0 || down.indexOf(p[1]) >= 0; })) await mutate(function (c) { CS.dropDown(c, down); });
     }
 
     /* ----- screens ----- */
@@ -74,29 +79,6 @@ const CombatUI = (function () {
             '<p class="hint">Report only: nothing is blocked. DEX reaction takes segments off one PC only (PHB p.11).' + inf("DMG p.61-62, p.71") + "</p></details>";
         return h;
     }
-    function dirHtml(k, dir, A, T, af, tf, wi, acOv) {
-        const ac = acOv !== null && acOv !== undefined ? acOv : tf.ac, nd = CA.need(af, wi, ac, tf.type, 0);
-        let h = '<div class="cmdir"><div class="cmdh">' + esc(A.name || "?") + " hits " + esc(T.name || "?") + "</div>";
-        if (af.kind === "pc") h += '<label>Weapon <select data-pw="' + k + ":" + dir + '">' + (af.weapons.length ? af.weapons.map(function (w, i) { return opt(i, w.name, wi); }).join("") : opt(0, "none on the sheet", 0)) + "</select></label>";
-        else if (af.kind === "mon") h += '<div class="muted">' + esc(af.mm) + ", " + esc(af.page) + "</div>";
-        else h += '<div class="muted">no sheet or MM entry</div>';
-        h += '<label>Target AC <input type="number" class="cmnum" data-pac="' + k + ":" + dir + '" value="' + (ac === null || ac === undefined || isNaN(ac) ? "" : ac) + '"></label>';
-        h += '<div class="cmneed">' + (nd === null ? "needs: type the AC" : "needs <b>" + nd + "</b> or more on d20") + "</div>";
-        h += "<div>" + esc(CA.attacksText(af, wi)) + (CA.isMissile(af, wi) ? inf(CA.MISSILE_NOTE) : "") + "</div>";
-        const dm = CA.damageText(af, wi), sp = CA.speedText(af, wi); if (dm) h += "<div>" + esc(dm) + "</div>"; if (sp) h += "<div>" + esc(sp) + "</div>";
-        return h + "</div>";
-    }
-    function pairsHtml(c) {
-        let h = "<h4>Who is fighting whom" + inf("Drag with the Fight tool, or right-click a token: Fight...") + "</h4>";
-        if (!c.pr.length) return h + '<p class="muted">No pairs yet. Use the Fight tool (drag from one token to the other) or right-click a token and choose Fight...</p>';
-        return h + c.pr.map(function (p, k) {
-            const A = byId(c.ro[p[0]]), T = byId(c.ro[p[1]]);
-            if (!A || !T) return '<div class="cmpair"><div class="cmph">A token is no longer on the scene <button type="button" class="x" data-act="pairdel" data-k="' + k + '" aria-label="Remove pair">&times;</button></div></div>';
-            const af = CA.facts(A), tf = CA.facts(T);
-            return '<div class="cmpair"><div class="cmph"><span><b>' + esc(A.name) + "</b> versus <b>" + esc(T.name) + '</b></span><button type="button" class="x" data-act="pairdel" data-k="' + k + '" title="Remove pair" aria-label="Remove pair">&times;</button></div><div class="cmdirs">' +
-                dirHtml(k, 0, A, T, af, tf, p[2], p[4]) + dirHtml(k, 1, T, A, tf, af, p[3], p[5]) + "</div></div>";
-        }).join("");
-    }
     function hitsHtml(c) {
         let h = "<h4>Hits this round" + inf("Twice as often as the other side means a morale check, DMG p.67 footnote") + '</h4><div class="cmhits">' + c.sd.map(function (s, i) {
             return '<div class="cmhit"><b>' + esc(s.n) + '</b><button type="button" class="btn ghost small" data-act="hit" data-i="' + i + '" data-d="-1" aria-label="One fewer hit for ' + esc(s.n) + '">-</button><span class="cmcount">' + (c.ht[i] || 0) + '</span><button type="button" class="btn small" data-act="hit" data-i="' + i + '" data-d="1" aria-label="One more hit for ' + esc(s.n) + '">+</button>' +
@@ -104,17 +86,43 @@ const CombatUI = (function () {
         CS.moraleFlags(c).forEach(function (m) { h += '<p class="cmnote">' + esc(m) + "</p>"; });
         return h;
     }
-    function hpHtml(c) {
-        const rows = [];
-        c.sd.forEach(function (s, i) { s.m.forEach(function (k) { const it = byId(c.ro[k]); if (it && !isPc(it)) rows.push([k, it, i]); }); });
-        let h = "<h4>Hit points (GM only)" + inf("Type -6 or +3 to change, or a number to set. 0 or less is dead (PHB p.105).") + "</h4>";
-        if (!rows.length) h += '<p class="muted">No NPC or monster tokens in the fight. PCs keep their sheet hit points.</p>';
-        else h += '<table class="grid cmhp">' + rows.map(function (r) {
-            const hp = hpOf(r[1]), dead = CS.isDead(hp);
-            return '<tr class="' + (dead ? "dead" : "") + '"><td>' + esc(r[1].name) + '</td><td class="muted">' + esc(c.sd[r[2]].n) + "</td><td>" + (hp ? (dead ? "dead" : "<b>" + hp[0] + "</b> / " + hp[1]) : "no hit points yet") + '</td><td><input class="cmhpin" data-hp="' + esc(r[1].id) + '" placeholder="' + (hp ? "-6, +3 or a number" : "maximum") + '" aria-label="Change hit points of ' + esc(r[1].name) + '"></td></tr>'; }).join("") + "</table>";
+    /* ----- the Party | Foes table: name, HP, target, to hit, damage, Roll ----- */
+    function foesOf(c, i) { const out = []; c.sd.forEach(function (s, j) { if (j !== i) s.m.forEach(function (k) { const it = byId(c.ro[k]); if (it && !isDown(it)) out.push([k, it]); }); }); return out; }
+    function rowModelFor(c, k, i) {
+        const it = byId(c.ro[k]), st = csOf(it), foes = foesOf(c, i), tg = foes.filter(function (x) { return x[1].id === st.tg; })[0];
+        if (!tg) return { it: it, st: st, foes: foes, tg: null };
+        const af = CA.facts(it), tf = CA.facts(tg[1]), wi = Math.min(st.wi || 0, Math.max(0, (af.weapons || []).length - 1));
+        return { it: it, st: st, foes: foes, tg: tg, af: af, tf: tf, wi: wi, m: CA.rowModel(af, wi, tf, st.ac) };
+    }
+    function rowHtml(c, k, i) {
+        const r = rowModelFor(c, k, i), it = r.it, hp = hpOf(it), dead = isDown(it), res = (c.rr || {})[k];
+        let h = '<tr class="cmr' + (dead ? " dead" : "") + '"><td class="cmname"><b>' + esc(it.name || "Unnamed token") + "</b></td>";
+        h += '<td class="cmhpc">' + (hp ? (dead ? "<i>dead</i> " : "<b>" + hp[0] + "</b>/" + hp[1] + " ") : '<span class="muted">none</span> ') + '<input class="cmhpin" data-hp="' + esc(it.id) + '" placeholder="' + (hp ? "-6, +3, 9" : "max") + '" aria-label="Change hit points of ' + esc(it.name) + '"></td>';
+        h += '<td><select data-tg="' + esc(it.id) + '" aria-label="Target of ' + esc(it.name) + '"><option value="">--</option>' + r.foes.map(function (x) { return opt(x[1].id, x[1].name, r.st.tg); }).join("") + "</select></td>";
+        if (!r.tg) h += '<td class="muted">-</td><td class="muted">-</td><td></td></tr>';
+        else {
+            const m = r.m, af = r.af;
+            h += "<td>" + (af.kind === "pc" ? '<select data-wi="' + esc(it.id) + '" aria-label="Weapon of ' + esc(it.name) + '">' + (af.weapons.length ? af.weapons.map(function (w, j) { return opt(j, w.name, r.wi); }).join("") : opt(0, "no weapon", 0)) + "</select> " : "") +
+                (m.need === null ? 'AC <input type="number" class="cmnum" data-acov="' + esc(it.id) + '" value="" aria-label="Target armour class"> needs ?' : "needs <b>" + m.need + "</b>") + (CA.isMissile(af, r.wi) ? inf(CA.MISSILE_NOTE) : "") + "</td>";
+            h += "<td>" + esc(m.dice.map(function (d) { return CA.diceText(d); }).join(" / ") || "?") + (af.kind === "pc" ? (m.size === "L" ? " vs L" : " vs S-M") : "") + '<br><small class="muted">' + esc(m.attacks) + "</small></td>";
+            h += '<td><button type="button" class="btn small" data-act="roll" data-k="' + k + '" aria-label="Roll ' + esc(it.name) + '">' + ic("dice") + "Roll</button></td></tr>";
+        }
+        if (res) h += '<tr class="cmres"><td colspan="6">' + res.ls.map(function (x) { return "<div>" + esc(x) + "</div>"; }).join("") + (res.dm > 0 && !res.ap ? '<button type="button" class="btn small" data-act="apply" data-k="' + k + '">Apply ' + res.dm + " damage" + (byId(c.ro[res.tk]) ? " to " + esc(byId(c.ro[res.tk]).name) : "") + "</button>" : res.ap ? '<span class="muted">applied</span>' : "") + "</td></tr>";
+        return h;
+    }
+    function tableHtml(c) {
+        const s = c.sd[hpTab];
+        let h = '<h4>Hit points, targets and rolls' + inf("Type -6 or +3 to change hit points, or a number to set. PCs: the sheet's hit points. 0 or less is dead (PHB p.105).") + '</h4><div class="seg cmtabs" role="tablist">' + c.sd.map(function (x, i) { return '<button type="button" role="tab" data-hptab="' + i + '" class="sb' + (i === hpTab ? " on" : "") + '" aria-pressed="' + (i === hpTab) + '">' + esc(x.n) + " <small>" + x.m.length + "</small></button>"; }).join("") + "</div>";
+        if (!s.m.length) return h + '<p class="muted">Nobody on this side.</p>';
+        h += '<div class="scroll"><table class="grid cmhp"><tr><th>Token</th><th>HP</th><th>Target</th><th>To hit</th><th>Damage</th><th></th></tr>' + s.m.map(function (k) { return rowHtml(c, k, hpTab); }).join("") + "</table></div>";
         CS.casualties(c, downIdx).forEach(function (x) { if (x.down) h += '<p class="cmnote">' + esc(x.text) + (x.morale ? ". " + esc(x.morale) : "") + "</p>"; });
         return h;
     }
+    function rollsHtml() {
+        if (!rolls.length) return "";
+        return '<details class="cmbox" id="cm-rolls"' + (rollsOpen ? " open" : "") + "><summary>Player rolls <small>" + rolls.length + "</small></summary><ul class=\"cmrolls\">" + rolls.map(function (r) { return "<li><b>" + esc(r.who) + ":</b> " + esc(r.x) + "</li>"; }).join("") + "</ul></details>";
+    }
+    let rollsOpen = true;
     function spellsHtml(c) {
         const pcs = []; c.sd.forEach(function (s) { s.m.forEach(function (k) { const it = byId(c.ro[k]); if (it && isPc(it)) pcs.push([k, it]); }); });
         if (!pcs.length) return "";
@@ -125,13 +133,12 @@ const CombatUI = (function () {
                 ' <input class="cmspn" data-spn="' + r[0] + '" placeholder="spell"> <input type="number" min="1" class="cmnum" data-spr="' + r[0] + '" placeholder="rounds"> <button type="button" class="btn small" data-act="spadd" data-k="' + r[0] + '">+ spell</button></div>'; }).join("");
         return h + '<p class="hint">Next round counts them down and tells you when one runs out.</p></details>';
     }
-    let surOpen = false, splOpen = false;
     function runHtml() {
         const c = cur.c;
         let h = '<div class="cmhead"><h3>Combat</h3><b class="cmrd">Round ' + c.rd + ' &middot; Turn ' + c.tn + ' <span class="muted">(round ' + CS.roundInTurn(c) + ' of 10)</span></b><span class="sp"></span>' +
             '<button type="button" class="x ibtn" data-act="cog" title="Set-up: sides and surprise ranges" aria-label="Set-up">' + ic("gear") + '</button><button type="button" class="btn ghost small" data-act="end">' + ic("flag") + "End combat</button></div>";
         if (showSetup()) h += setupHtml();
-        return h + roundHtml(c) + surpriseHtml(c) + pairsHtml(c) + hitsHtml(c) + hpHtml(c) + spellsHtml(c);
+        return h + roundHtml(c) + surpriseHtml(c) + tableHtml(c) + hitsHtml(c) + spellsHtml(c) + rollsHtml();
     }
     const showSetup = function () { return setupOpen === null ? !cur.c : setupOpen; };
     function render() {
@@ -140,10 +147,23 @@ const CombatUI = (function () {
         gmRoot.innerHTML = '<div class="cmcard">' + (cur.c ? runHtml() : '<div class="cmhead"><h3>Combat</h3><span class="sp"></span><button type="button" class="x ibtn" data-act="cog" title="Set-up" aria-label="Set-up">' + ic("gear") + "</button></div>" + (showSetup() ? setupHtml() : '<p class="muted">No combat running. Open set-up (the gear) to start one.</p>')) + "</div>";
         if (keep) { const e = gmRoot.querySelector("#" + keep); if (e) e.focus(); }
     }
+    // Roll (GM): d20 against the need, damage on a hit (each attack form of a monster, each shot of a bow), the latest result kept on the row until Next round, hits added to the side's tally
+    function rollRow(k) {
+        const c = cur.c, i = CS.sideOf(c, k), r = rowModelFor(c, k, i); if (!r.tg || !r.m) return;
+        const res = CA.rollRow(r.m), tk = c.ro.indexOf(r.tg[1].id);
+        mutate(function (c) { c.rr = c.rr || {}; c.rr[k] = { ls: res.lines, dm: res.dm, hits: res.hits, tk: tk, ap: 0 }; CS.hit(c, i, res.hits); });
+    }
+    // Apply: the damage comes off the target's hit points (a PC's sheet hp, or a monster's cs.h); 0 or less is dead
+    async function applyRow(k) {
+        const c = cur.c, rr = (c.rr || {})[k], t = rr && byId(c.ro[rr.tk]); if (!rr || !t || rr.ap) return;
+        const h = hpOf(t); if (!h) { say("That token has no hit points yet: type its maximum first.", "WARNING"); return; }
+        await setHp(t, CA.applyDamage(h, rr.dm)); await mutate(function (c) { c.rr[k].ap = 1; });
+    }
     async function onClick(e) {
-        const b = e.target.closest("[data-act]"); if (!b) return;
+        const b = e.target.closest("[data-act],[data-hptab]"); if (!b) return;
         const a = b.dataset.act, c = cur.c, k = Number(b.dataset.k), i = Number(b.dataset.i);
         if (a === "cog") { setupOpen = !showSetup(); render(); }
+        else if (b.dataset.hptab !== undefined) { hpTab = Number(b.dataset.hptab); render(); }
         else if (a === "start") {
             const ids = items.map(function (it) { return it.id; }), side = items.map(sideFor), dv = derived();
             if (side.every(function (s) { return s === 2; })) { say("Put at least one token in a side.", "WARNING"); return; }
@@ -156,7 +176,8 @@ const CombatUI = (function () {
         else if (a === "next") mutate(function (c) { notice = CS.nextRound(c); });
         else if (a === "sur-roll") mutate(function (c) { [0, 1].forEach(function (j) { if (c.sd[j].ra) CS.setSurprise(c, j, GMCombat.rnd(6)); }); });
         else if (a === "sur-clear") mutate(function (c) { [0, 1].forEach(function (j) { CS.setSurprise(c, j, 0); }); });
-        else if (a === "pairdel") mutate(function (c) { CS.removePair(c, k); });
+        else if (a === "roll") rollRow(k);
+        else if (a === "apply") applyRow(k);
         else if (a === "hit") mutate(function (c) { CS.hit(c, i, Number(b.dataset.d)); });
         else if (a === "spadd") { const n = gmRoot.querySelector('[data-spn="' + k + '"]'), r = gmRoot.querySelector('[data-spr="' + k + '"]'); if (n && r) mutate(function (c) { if (!CS.addSpell(c, k, n.value, r.value)) say("Give the spell a name and a number of rounds.", "WARNING"); }); }
         else if (a === "spdel") mutate(function (c) { c.sp.splice(k, 1); });
@@ -185,9 +206,18 @@ const CombatUI = (function () {
         else if (t.dataset.sd !== undefined) mutate(function (c) { CS.setSurprise(c, Number(t.dataset.sd), parseInt(t.value, 10) || 0); });
         else if (t.id === "cm-n0" || t.id === "cm-n1") mutate(function (c) { if (t.value.trim()) c.sd[i].n = t.value.trim().slice(0, 24); });
         else if (t.dataset.et !== undefined) mutate(function (c) { c.sd[Number(t.dataset.et)].et = t.checked ? 1 : 0; refreshRanges(c); });
-        else if (t.dataset.pw !== undefined) { const q = t.dataset.pw.split(":"); mutate(function (c) { c.pr[Number(q[0])][2 + Number(q[1])] = Number(t.value); }); }
-        else if (t.dataset.pac !== undefined) { const q = t.dataset.pac.split(":"); mutate(function (c) { c.pr[Number(q[0])][4 + Number(q[1])] = t.value === "" ? null : Number(t.value); }); }
-        else if (t.dataset.hp) { const it = byId(t.dataset.hp), h = CS.hpEdit(hpOf(it), t.value); if (h) setHp(it.id, h); else { say("Type -6, +3 or a number.", "WARNING"); t.value = ""; } }
+        else if (t.dataset.tg !== undefined) setCs(t.dataset.tg, { tg: t.value || null });
+        else if (t.dataset.wi !== undefined) setCs(t.dataset.wi, { wi: Number(t.value) });
+        else if (t.dataset.acov !== undefined) setCs(t.dataset.acov, { ac: t.value === "" ? null : Number(t.value) });
+        else if (t.dataset.hp) { const it = byId(t.dataset.hp), h = CS.hpEdit(hpOf(it), t.value); if (h) setHp(it, h); else { say("Type -6, +3 or a number.", "WARNING"); t.value = ""; } }
+    }
+    // the players' sheet rolls: each player's own metadata `.../rolls` (last 10 each), newest 10 overall
+    async function scanRolls() {
+        try {
+            const O = TK.OBR, all = [{ metadata: await O.player.getMetadata() }].concat(await O.party.getPlayers()), out = [];
+            all.forEach(function (p) { ((p.metadata || {})[CS.NS + "/rolls"] || []).forEach(function (r) { if (r && r.x) out.push(r); }); });
+            rolls = out.sort(function (a, b) { return b.t - a.t; }).slice(0, 10); render();
+        } catch (er) { console.warn(er); }
     }
     async function loadItems() {
         try { players = (await TK.OBR.party.getPlayers()).filter(function (p) { return p.role === "PLAYER"; }); } catch (e) { players = []; }
@@ -198,7 +228,7 @@ const CombatUI = (function () {
     /* ----- entry points ----- */
     function initGm(el) {
         gmRoot = el; el.addEventListener("click", onClick); el.addEventListener("change", onChange);
-        el.addEventListener("toggle", function (e) { if (e.target.id === "cm-sur") surOpen = e.target.open; if (e.target.id === "cm-spl") splOpen = e.target.open; }, true);
+        el.addEventListener("toggle", function (e) { if (e.target.id === "cm-sur") surOpen = e.target.open; if (e.target.id === "cm-spl") splOpen = e.target.open; if (e.target.id === "cm-rolls") rollsOpen = e.target.open; }, true);
     }
     // called by the hub (GM only) once the scene is ready: read, then follow changes
     async function boot() {
@@ -206,7 +236,7 @@ const CombatUI = (function () {
         try { if (await O.scene.isReady()) { await loadItems(); ingest(await O.scene.getMetadata()); } } catch (e) { console.warn(e); }
         O.scene.onMetadataChange(ingest); O.scene.items.onChange(loadItems);
         O.scene.onReadyChange(async function (r) { if (r) { await loadItems(); ingest(await O.scene.getMetadata()); } });
-        O.party.onChange(function (ps) { players = ps.filter(function (p) { return p.role === "PLAYER"; }); });
+        O.party.onChange(function (ps) { players = ps.filter(function (p) { return p.role === "PLAYER"; }); scanRolls(); }); O.player.onChange(scanRolls); scanRolls();
     }
     return { initGm: initGm, boot: boot, _state: function () { return cur; } };
 })();

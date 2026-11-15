@@ -1,6 +1,6 @@
 "use strict";
 /* combat_state.js - DOM-free combat state (simple combat, TB 2026-11-16: no automation). Scene metadata key `combat`:
-   { v:2, on:1, rd:1, tn:1, w:-1, ro:[ids], nf:[roster idx], sd:[{n,ra,sr,in,ov,et,m:[roster idx]}], pr:[[a,t,wa,wt,acForA,acForT]], ht:[hits per side], lh:[last round's hits], sp:[[idx,name,rounds left]] }
+   { v:2, on:1, rd:1, tn:1, w:-1, ro:[ids], nf:[roster idx], sd:[{n,ra,sr,in,ov,et,m:[roster idx]}], ht:[hits per side], lh:[last round's hits], sp:[[idx,name,rounds left]], rr:{roster idx: latest roll result} }
    Uses surpriseSegments, dexSegments, dexReaction, initWinner from lib/combat_rules.js (loaded first) and MONSTER_DETAILS (lib/monsters.js). Tested by test/toolkit.test.js. */
 const CombatState = (function () {
     const NS = "io.github.solid-state-games.1e-toolkit", KEY = NS + "/combat", PRE = NS + "/pre", CSK = NS + "/cs";
@@ -9,7 +9,7 @@ const CombatState = (function () {
     // ids: token ids (roster, stored once); side: side number per id (a number past the last side = Not fighting); names: side names; ranges: surprised-on 1 to n per side
     function create(ids, side, names, ranges) {
         const n = Math.max(2, names.length);
-        const c = { v: 2, on: 1, rd: 1, tn: 1, w: -1, ro: ids.slice(), nf: [], pr: [], ht: [], lh: null, sp: [],
+        const c = { v: 2, on: 1, rd: 1, tn: 1, w: -1, ro: ids.slice(), nf: [], ht: [], lh: null, sp: [], rr: {},
             sd: Array.apply(null, Array(n)).map(function (x, i) { return { n: String(names[i] || (i ? "Foes" : "Party")).slice(0, 24), ra: clampRange(ranges ? ranges[i] : 2), sr: 0, in: 0, m: [] }; }) };
         c.ht = c.sd.map(function () { return 0; });
         ids.forEach(function (id, k) { if (side[k] >= c.sd.length) c.nf.push(k); else c.sd[side[k] || 0].m.push(k); });
@@ -21,7 +21,7 @@ const CombatState = (function () {
     function moveToken(c, k, to) {
         c.sd.forEach(function (s) { s.m = s.m.filter(function (x) { return x !== k; }); }); c.nf = (c.nf || []).filter(function (x) { return x !== k; });
         (to >= c.sd.length ? c.nf : c.sd[to].m).push(k); c.sd.map(function (s) { return s.m; }).concat([c.nf]).forEach(function (a) { a.sort(function (x, y) { return x - y; }); });
-        if (to >= c.sd.length) c.pr = c.pr.filter(function (p) { return p[0] !== k && p[1] !== k; });   // a token that is not fighting is in no pair
+        delete c.rr[k];
     }
     const fighters = function (c) { return [].concat.apply([], c.sd.map(function (s) { return s.m; })); };
     // Right-click side assignment (GM): put tokens on side `to` or Not fighting. In a combat it edits the roster (adding tokens not yet in it); before a combat it records the choice in `pre`.
@@ -62,31 +62,13 @@ const CombatState = (function () {
 
     /* ----- rounds and turns: 1 round = 1 minute, 1 turn = 10 rounds (PHB p.39) ----- */
     const roundInTurn = function (c) { return ((c.rd - 1) % 10) + 1; };
-    // Next round: this round's hits become "last round", hits and initiative clear, spell countdowns tick. Returns the names of spells that ran out.
+    // Next round: this round's hits become "last round", hits, roll results and initiative clear, spell countdowns tick. Returns the names of spells that ran out.
     function nextRound(c) {
-        c.lh = c.ht.slice(); c.ht = c.sd.map(function () { return 0; }); c.w = -1; c.sd.forEach(function (s) { s.in = 0; });
+        c.lh = c.ht.slice(); c.ht = c.sd.map(function () { return 0; }); c.rr = {}; c.w = -1; c.sd.forEach(function (s) { s.in = 0; });
         c.rd++; c.tn = Math.floor((c.rd - 1) / 10) + 1;
         const done = []; c.sp.forEach(function (s) { s[2]--; if (s[2] <= 0) done.push(s); }); c.sp = c.sp.filter(function (s) { return s[2] > 0; });
         return done;
     }
-
-    /* ----- who is fighting whom: pairs [a, t, weapon of a, weapon of t, AC override for a's target, AC override for t's target] (roster indexes) ----- */
-    function addPair(c, a, t) {
-        if (a === t || a < 0 || t < 0 || c.nf.indexOf(a) >= 0 || c.nf.indexOf(t) >= 0) return false;
-        if (c.pr.some(function (p) { return (p[0] === a && p[1] === t) || (p[0] === t && p[1] === a); })) return false;
-        c.pr.push([a, t, 0, 0, null, null]); return true;
-    }
-    const removePair = function (c, k) { c.pr.splice(k, 1); };
-    // Right-click or tool: add a pair by token ids; both must be in the roster and fighting. Returns {patch} or {msg}.
-    function pairPatch(meta, aId, tId) {
-        const r = read(meta); if (!r.c) return { msg: "Start combat first." };
-        const c = JSON.parse(JSON.stringify(r.c)), a = c.ro.indexOf(aId), t = c.ro.indexOf(tId);
-        if (a < 0 || t < 0) return { msg: "Both tokens must be in the combat (right-click: Combat side)." };
-        if (!addPair(c, a, t)) return { msg: a === t ? "A token cannot fight itself." : c.nf.indexOf(a) >= 0 || c.nf.indexOf(t) >= 0 ? "A token that is not fighting cannot be paired." : "Those two are already paired." };
-        const o = {}; o[KEY] = c; return { patch: o };
-    }
-    // pairs that include a token that is down (a monster at 0 hit points or less) go away
-    function dropDown(c, down) { c.pr = c.pr.filter(function (p) { return down.indexOf(p[0]) < 0 && down.indexOf(p[1]) < 0; }); }
 
     /* ----- hits this round per side: a tally for the GM; twice as often as the other side, and at least 2, means a morale check (DMG p.67 footnote) ----- */
     function hit(c, i, d) { c.ht[i] = Math.max(0, (c.ht[i] || 0) + d); }
@@ -166,7 +148,7 @@ const CombatState = (function () {
 
     /* ----- scene metadata in and out ----- */
     const LEGACY = [NS + "/undo", NS + "/log/"];
-    function read(meta) { meta = meta || {}; const c = meta[KEY]; return { c: c && c.on ? (c.v === 2 ? c : migrate(c)) : null }; }
+    function read(meta) { meta = meta || {}; const c = meta[KEY]; if (c && c.on && c.v === 2 && !c.rr) c.rr = {}; return { c: c && c.on ? (c.v === 2 ? c : migrate(c)) : null }; }
     // An earlier build's combat (phases, logs) keeps its sides, roster, ranges and round; everything else is dropped.
     function migrate(o) {
         const c = create(o.ro || [], (o.ro || []).map(function (id, k) { for (let i = 0; i < o.sd.length; i++) if (o.sd[i].m.indexOf(k) >= 0) return i; return o.sd.length; }), o.sd.map(function (s) { return s.n; }), o.sd.map(function (s) { return s.ra; }));
@@ -176,6 +158,7 @@ const CombatState = (function () {
     function cleanPatch(meta) {
         const o = {}; Object.keys(meta || {}).forEach(function (k) { if (k === LEGACY[0] || k.indexOf(LEGACY[1]) === 0) o[k] = undefined; });
         const c = (meta || {})[KEY]; if (c && c.on && c.v !== 2) o[KEY] = migrate(c); else if (c && !c.on) o[KEY] = undefined;
+        else if (c && c.on && c.pr) { const n = JSON.parse(JSON.stringify(c)); delete n.pr; o[KEY] = n; }   // pairs were dropped in the combat that gives each row its own target
         return o;
     }
     // old per-token attack counts in `cs` ({rs, at, mx}) are no longer used
@@ -183,7 +166,7 @@ const CombatState = (function () {
     function clearPatch(meta) { const o = {}; Object.keys(meta || {}).forEach(function (k) { if (k === KEY || k === PRE || k === NS + "/undo" || k.indexOf(NS + "/log/") === 0) o[k] = undefined; }); o[KEY] = undefined; return o; }
     return { NS: NS, KEY: KEY, PRE: PRE, CS: CSK, TIE_NOTE: TIE_NOTE, create: create, clampRange: clampRange, sideOf: sideOf, moveToken: moveToken, fighters: fighters, sidesPatch: sidesPatch,
         setRange: setRange, setSurprise: setSurprise, surpriseReady: surpriseReady, surpriseSegs: surpriseSegs, surpriseWords: surpriseWords, rollInit: rollInit, initText: initText,
-        roundInTurn: roundInTurn, nextRound: nextRound, addPair: addPair, removePair: removePair, pairPatch: pairPatch, dropDown: dropDown, hit: hit, moraleFlags: moraleFlags, addSpell: addSpell,
+        roundInTurn: roundInTurn, nextRound: nextRound, hit: hit, moraleFlags: moraleFlags, addSpell: addSpell,
         hpEdit: hpEdit, isDead: isDead, rollHd: rollHd, casualties: casualties, monsterOf: monsterOf, sideFacts: sideFacts, deriveRanges: deriveRanges, applyRanges: applyRanges,
         read: read, migrate: migrate, cleanPatch: cleanPatch, oldCs: oldCs, clearPatch: clearPatch };
 })();

@@ -22,7 +22,7 @@ export async function installCombatHp(OBR, NS, build) {
             if (!c) { if (mine.length) await OBR.scene.local.deleteItems(mine.map(i => i.id)); return; }
             const fighting = items.filter(i => c.ro.indexOf(i.id) >= 0 && CS.sideOf(c, c.ro.indexOf(i.id)) < c.sd.length);
             const join = fighting.filter(i => !(i.metadata || {})[SheetRules.KEY] && !((i.metadata || {})[CS.CS] || {}).h && CS.monsterOf(i.name));
-            if (join.length) { await OBR.scene.items.updateItems(join.map(i => i.id), d => d.forEach(x => { const m = CS.monsterOf(x.name); x.metadata[CS.CS] = { h: CS.rollHd(m.d.hitDice) || [1, 1] }; })); return; }
+            if (join.length) { await OBR.scene.items.updateItems(join.map(i => i.id), d => d.forEach(x => { const m = CS.monsterOf(x.name); x.metadata[CS.CS] = Object.assign({}, x.metadata[CS.CS] || {}, { h: CS.rollHd(m.d.hitDice) || [1, 1] }); })); return; }
             const want = {}; fighting.forEach(i => { const h = ((i.metadata || {})[CS.CS] || {}).h; if (h && !(i.metadata || {})[SheetRules.KEY]) want[i.id] = CS.isDead(h) ? "x" : String(h[0]); });
             const have = {}; mine.forEach(i => { have[i.metadata[TAG].t] = i.metadata[TAG].s; });
             const drop = mine.filter(i => want[i.metadata[TAG].t] !== i.metadata[TAG].s).map(i => i.id);

@@ -539,8 +539,22 @@ function proficiencyChoices(sheet) {
 function weaponLine(row, abilities) {
     const typeRange = [10, 9, 8, 7, 6, 5, 4, 3, 2];
     const hitMod = row.kind === 'missile' ? abilities.dex.reaction : abilities.str.hit; // PHB p.9 hit adj; PHB p.11 missile adj
-    return { name: row.name, kind: row.kind, adj: typeRange.map(t => row.adj[t - 2]), types: typeRange, sm: row.smTxt, lg: row.lgTxt, spd: row.spdTxt || row.spd,
+    return { name: row.name, kind: row.kind, smD: row.sm, lgD: row.lg, adj: typeRange.map(t => row.adj[t - 2]), types: typeRange, sm: row.smTxt, lg: row.lgTxt, spd: row.spdTxt || row.spd,
         len: row.len, space: row.space, rate: row.rate, range: row.range, hitMod: hitMod, dmgMod: row.kind === 'melee' ? abilities.str.dmg : 0 };
+}
+
+/* ---------- rolling a weapon on the sheet (no target needed) ----------
+   d20 to hit with the sheet's to-hit bonus (STR for melee, DEX for missiles, PHB p.9, p.11), read against the class matrix (DMG p.74-75) to say which armour classes it hits,
+   and damage against S-M and L (PHB p.37) with the STR damage bonus for melee. Weapon adjustments against armour type (PHB p.38) are not applied. rng: () => [0,1). */
+function rollWeapon(view, w, rng) {
+    rng = rng || Math.random;
+    const die = n => 1 + Math.floor(rng() * n), dice = a => { if (!a) return null; let t = a[2] + (w.dmgMod || 0); for (let i = 0; i < a[0]; i++) t += die(a[1]); return Math.max(0, t); };
+    const rows = (w.kind === 'missile' ? view.toHitRows.missile : view.toHitRows.melee), d20 = die(20), bonus = w.hitMod || 0, total = d20 + bonus;
+    let ac = null; for (let a = -10; a <= 10; a++) { if (d20 >= rows[a]) { ac = a; break; } }   // rows[a] already has the bonus taken off the matrix number
+    const hitTxt = ac === null ? 'misses even armour class 10' : ac === -10 ? 'hits any armour class' : 'hits armour class ' + ac + ' or higher (a worse armour)';
+    const sm = dice(w.smD), lg = dice(w.lgD);
+    return { name: w.name, d20: d20, bonus: bonus, total: total, ac: ac, sm: sm, lg: lg,
+        text: w.name + ': rolled ' + d20 + (bonus ? ' (' + (bonus > 0 ? '+' : '') + bonus + ') = ' + total : '') + '; ' + hitTxt + '. Damage ' + (sm === null ? '-' : sm) + ' vs S-M, ' + (lg === null ? '-' : lg) + ' vs L.' };
 }
 
 /* ---------- movement by encumbrance (PHB p.101, as rules_1e.encumbrance) ---------- */
@@ -794,7 +808,7 @@ function previewLine(sheet) {
     return s.race + ' ' + s.cl.join('/') + ', level ' + s.lv.join('/') + ' (' + s.al + '). ' + sc + '. HP ' + s.hm + (v.d ? ', AC ' + v.d.ac : '') + '.';
 }
 
-const api = { CAST_BITS, VIEW_KEY, ammoLines, adjustAmmo, isCast, toggleCast, restSpells, filterMem, defaultSheetView, NS, KEY, OWNER_KEY, FORMAT, MAX_BYTES, WARN_BYTES, LIM, SPELL_KEY, COIN_NAMES, COIN_GP, ABIL, RACE_TRAITS,
+const api = { rollWeapon, CAST_BITS, VIEW_KEY, ammoLines, adjustAmmo, isCast, toggleCast, restSpells, filterMem, defaultSheetView, NS, KEY, OWNER_KEY, FORMAT, MAX_BYTES, WARN_BYTES, LIM, SPELL_KEY, COIN_NAMES, COIN_GP, ABIL, RACE_TRAITS,
     blank, sanitize, pack, randomPC, protectiveInfo, wearState, wearables, setWorn, bestWear, acBuild, saveTargets, SAVE_NAMES, MAGIC_AC_PICK, WEAR_TEXT, WEAR_PAGE, SOLDIERS, EXPERTS, SOLDIER_PAY_PAGE, SERJEANT_MULT, LOY_BASE, LOY_CATS, LOY_ALIGN, LOY_ALIGN_ROWS, LOY_SPECIAL, LOY_PENALTY, LOY_BONUS, LOY_SITUATION, LOY_BANDS, LOY_CHECKS, HENCH_MAINT, H, blankHench,
     command, directCap, assassinRule, MERC_CAP_BY_CLASS, MERC_CAP_OTHER, entryParts, locOf, hydrateRow, moveItem, removePlace, placeCounts, coinsAt, setCoinsAt, purseGp, payFrom, loyalty, loyaltyCheck, bandOf, soldierCost, expertCost, hireLine, retainers, bytes, sizeOf, exportText, parseImport, toChar, hydrate, combatRows, proficiencyChoices, weaponLine, movementTable, compute, coinGp, coinPieces, fromCreator, fromQuickParty, previewLine, coinsFromCP, qpSpells };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;

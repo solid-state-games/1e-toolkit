@@ -325,10 +325,10 @@ const SheetUI = (function () {
         if (view.weapons.length) {
             wt = '<div class="scroll"><table class="grid wtab"><tr><th>Weapon</th><th>Hit adj</th><th>Dmg S-M</th><th>Dmg L</th><th>Speed</th><th>Space / range</th>' + [10, 9, 8, 7, 6, 5, 4, 3, 2].map(function (t) { return "<th title=\"Weapon adjustment against armour type " + t + " (PHB p.38)\">" + t + "</th>"; }).join("") + "</tr>" +
                 view.weapons.map(function (w) {
-                    return "<tr><td>" + esc(w.name) + (w.kind === "missile" ? " (missile)" : "") + "</td><td>" + sg(w.hitMod) + "</td><td>" + esc(w.sm || "-") + (w.dmgMod ? " " + sg(w.dmgMod) : "") + "</td><td>" + esc(w.lg || "-") + (w.dmgMod ? " " + sg(w.dmgMod) : "") + "</td><td>" + esc(w.spd === null || w.spd === undefined ? "-" : w.spd) + "</td><td>" +
+                    return "<tr><td>" + '<button type="button" class="x wdice" data-act="wroll" data-n="' + esc(w.name) + '" title="Roll to hit and damage" aria-label="Roll ' + esc(w.name) + '"><i class="ic ic-dice" aria-hidden="true"></i></button> ' + esc(w.name) + (w.kind === "missile" ? " (missile)" : "") + "</td><td>" + sg(w.hitMod) + "</td><td>" + esc(w.sm || "-") + (w.dmgMod ? " " + sg(w.dmgMod) : "") + "</td><td>" + esc(w.lg || "-") + (w.dmgMod ? " " + sg(w.dmgMod) : "") + "</td><td>" + esc(w.spd === null || w.spd === undefined ? "-" : w.spd) + "</td><td>" +
                         esc(w.kind === "missile" ? "rate " + w.rate + ", range " + w.range.join("/") + '"' : "len " + w.len + ", space " + w.space) + "</td>" +
                         w.adj.map(function (a) { return '<td class="' + (a > 0 ? "pos" : a < 0 ? "neg" : "") + '">' + (a ? sg(a) : "--") + "</td>"; }).join("") + "</tr>";
-                }).join("") + "</table></div>" + '<p class="hint">Damage and weapon adjustments PHB p.37-38; speed factors and space PHB p.38. Strength damage adj ' + sg(A.str.dmg) + " is added to melee damage (PHB p.9).</p>";
+                }).join("") + "</table></div>" + '<p class="wres" id="wres">' + esc(lastRoll) + "</p>" + '<p class="hint">Damage and weapon adjustments PHB p.37-38; speed factors and space PHB p.38. Strength damage adj ' + sg(A.str.dmg) + " is added to melee damage (PHB p.9).</p>";
         } else wt = '<p class="muted">Choose weapons of proficiency above to list their figures here.</p>';
         h += box("Weapons: damage, speed, space and adjustment against armour type", wt);
         // HP and hit dice
@@ -632,10 +632,23 @@ const SheetUI = (function () {
         if (el.dataset.live && canWrite) { setPath(el.dataset.f, el.value); sheet.nt = String(sheet.nt).slice(0, SR.LIM.text); const c = $("ntc"); if (c) c.textContent = el.value.length; commit(false); }
     }
     function addTo(path, val) { const a = get(path); a.push(val); }
+    // the dice button on a weapon: d20 to hit with the sheet's bonuses and the damage, shown here and posted to the GM's "Player rolls" list (own player metadata, last 10)
+    let lastRoll = "";
+    window.SheetRoll = { last: function () { return lastRoll; } };
+    async function rollWeapon(name) {
+        const w = view.weapons.filter(function (x) { return x.name === name; })[0]; if (!w) return;
+        lastRoll = SR.rollWeapon(view, w).text; const el = $("wres"); if (el) el.textContent = lastRoll;
+        try {
+            const me = (await TK.OBR.player.getMetadata()) || {}, list = (me[SR.NS + "/rolls"] || []).slice(-9);
+            list.push({ t: Date.now(), who: String(sheet.nm || (item && item.name) || "A player").slice(0, 24), x: lastRoll });
+            const o = {}; o[SR.NS + "/rolls"] = list; await TK.OBR.player.setMetadata(o);
+        } catch (er) { console.warn(er); }
+    }
     function onClick(e) {
         const b = e.target.closest("[data-act]"); if (!b || b.tagName === "SELECT" || b.tagName === "OPTION") return;
         const act = b.dataset.act, i = Number(b.dataset.i), c = b.dataset.c, l = Number(b.dataset.l), idv = function (x) { const el = $(x); return el ? el.value.trim() : ""; };
         if (act === "vw") { mode = b.dataset.v === "simple" ? "simple" : "full"; try { localStorage.setItem(SR.VIEW_KEY + "-" + TK.role, mode); } catch (e) { /* ignore */ } pending = null; drawer = -1; paint(); window.scrollTo(0, 0); return; }
+        if (act === "wroll") { rollWeapon(b.dataset.n); return; }
         if (act === "tab") { tab = i; pending = null; drawer = -1; paint(); return; }
         if (act === "rsub") { rsub = i; pending = null; drawer = -1; paint(); return; }
         if (act === "hn-edit") { drawer = i; drawerAnim = true; paint(); return; }

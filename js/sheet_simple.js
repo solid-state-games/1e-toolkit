@@ -51,10 +51,12 @@ function html(view, canWrite) {
     h += '<div class="two sv-hit"><section class="dbox"><h3>Saving throws</h3><table class="grid saves"><tr>' + names.map(n => '<th>' + n[1] + '</th>').join('') + '</tr><tr>' + names.map(n => '<td>' + saveCell(view.saves[n[0]], view.ac.save) + '</td>').join('') + '</tr></table></section>' +
         '<section class="dbox"><h3>To hit by armour class</h3><div class="scroll"><table class="grid tohit simplehit"><tr><th>AC</th>' + acs.map(a => '<th>' + a + '</th>').join('') + '</tr>' +
         '<tr><th>Melee</th>' + acs.map(a => '<td>' + view.toHitRows.melee[a] + '</td>').join('') + '</tr><tr><th>Missile</th>' + acs.map(a => '<td>' + view.toHitRows.missile[a] + '</td>').join('') + '</tr></table></div></section></div>';
+    // a dice button beside each weapon: rolls d20 to hit and the damage (sheet_ui.js handles data-act="wroll")
+    const wdice = x => '<button type="button" class="x wdice" data-act="wroll" data-n="' + esc(x.name) + '" title="Roll to hit and damage" aria-label="Roll ' + esc(x.name) + '"><i class="ic ic-dice" aria-hidden="true"></i></button> ';
     // weapons and ammunition side by side (a section with nothing in it is left out)
     let w = '';
     if (view.weapons.length) w = '<section class="dbox"><h3>Weapons</h3><div class="scroll"><table class="grid"><tr><th>Weapon</th><th>To hit adj</th><th>Damage S-M</th><th>Damage L</th><th>Speed</th></tr>' + view.weapons.map(x =>
-        '<tr><td>' + esc(x.name) + (x.kind === 'missile' ? ' (missile)' : '') + '</td><td>' + sg(x.hitMod) + '</td><td>' + esc(x.sm || '-') + (x.dmgMod ? ' ' + sg(x.dmgMod) : '') + '</td><td>' + esc(x.lg || '-') + (x.dmgMod ? ' ' + sg(x.dmgMod) : '') + '</td><td>' + esc(x.spd === undefined || x.spd === '' || x.spd === null ? '-' : x.spd) + '</td></tr>').join('') + '</table></div></section>';
+        '<tr><td>' + wdice(x) + esc(x.name) + (x.kind === 'missile' ? ' (missile)' : '') + '</td><td>' + sg(x.hitMod) + '</td><td>' + esc(x.sm || '-') + (x.dmgMod ? ' ' + sg(x.dmgMod) : '') + '</td><td>' + esc(x.lg || '-') + (x.dmgMod ? ' ' + sg(x.dmgMod) : '') + '</td><td>' + esc(x.spd === undefined || x.spd === '' || x.spd === null ? '-' : x.spd) + '</td></tr>').join('') + '</table></div><p class="wres" id="wres">' + esc((window.SheetRoll && window.SheetRoll.last()) || '') + '</p></section>';
     const am = SR.ammoLines(s);
     let a = '';
     if (am.length) a = '<section class="dbox"><h3>Ammunition</h3><ul class="ammo">' + am.map((x, i) => '<li><span class="an">' + esc(x.name) + '</span>' +
