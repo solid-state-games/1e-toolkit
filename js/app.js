@@ -173,15 +173,18 @@ const Enc = (function () {
     function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
     const st = { mode: "", terrain: "plains", density: "high" };
     const DENS = [["high", "Wilderness", "1 in 10"], ["medium", "Patrolled", "1 in 12"], ["low", "Dense", "1 in 20"]];
-    // mode buttons, grouped (the groups come from the engine's own lists)
-    const MODE_GROUPS = [["Climate", [""].concat(LAND_MODES)], ["Water", WATER_MODES], ["Planes", PLANE_MODES], ["City", CITY_MODES]];
+    // Climate is a dropdown (Temperate and the six land climates); Water, Planes and City are button groups. Picking a button overrides the climate, picking a climate clears the buttons.
+    const MODE_GROUPS = [["Water", WATER_MODES], ["Planes", PLANE_MODES], ["City", CITY_MODES]];
+    // terrain icons: Phosphor (MIT) and game-icons.net (CC BY 3.0, Delapouite) in vendor/icons, credited in guide.html and README
+    const HEX_ICON = { plains: "gi-grass", scrub: "plant", forest: "tree-evergreen", rough: "gi-falling-rocks", hills: "gi-hills", mountains: "mountains", desert: "cactus", marsh: "gi-swamp",
+        smallBody: "drop", largeBody: "waves", shallow: "waves", deep: "anchor", freshShallow: "fish", freshDeep: "anchor", saltShallow: "fish", saltDeep: "anchor", astral: "planet", ethereal: "ghost", psionic: "brain", city: "city" };
     const modeLabel = function (m) { return m ? MODE_SHORT[m] : "Temperate"; };
     const pressed = function (b, on) { return ' aria-pressed="' + (on ? "true" : "false") + '"' + (on ? ' class="' + b + ' on"' : ' class="' + b + '"'); };
     function init(el) {
         root = el;
-        el.innerHTML = '<div class="egroup"><span class="elab">Mode</span><div class="emodes" id="e-modes">' + MODE_GROUPS.map(function (g) {
+        el.innerHTML = '<div class="egroup"><span class="elab">Mode</span><div class="emodes" id="e-modes"><div class="mgrp"><span class="mcap">Climate</span><select id="e-climate" aria-label="Climate">' + [""].concat(LAND_MODES).map(function (m) { return '<option value="' + m + '">' + esc(modeLabel(m)) + "</option>"; }).join("") + '<option value="-" disabled>off: a mode below is used</option></select></div>' + MODE_GROUPS.map(function (g) {
                 return '<div class="mgrp"><span class="mcap">' + g[0] + "</span><div class=\"seg wrap\">" + g[1].map(function (m) { return '<button type="button" data-mode="' + m + '"' + pressed("sb", m === st.mode) + ">" + esc(modeLabel(m)) + "</button>"; }).join("") + "</div></div>"; }).join("") + "</div></div>" +
-            '<div class="egroup"><span class="elab">Terrain</span><div class="hexgrid" id="e-hex"></div></div>' +
+            '<div class="egroup"><span class="elab">Terrain</span><div class="hexwrap"><div class="hexgrid" id="e-hex"></div><div class="tname" id="e-tname" aria-live="polite"></div></div></div>' +
             '<div class="egroup"><span class="elab">Density</span><div class="seg" id="e-dens">' + DENS.map(function (d) { return '<button type="button" data-dens="' + d[0] + '" title="' + d[2] + '"' + pressed("sb", d[0] === st.density) + ">" + d[1] + " <small>" + d[2] + "</small></button>"; }).join("") + "</div></div>" +
             '<div class="ctl"><label class="chk"><input type="checkbox" id="e-air"> Airborne</label><label class="chk"><input type="checkbox" id="e-psi"> Psionic</label><label class="chk"><input type="checkbox" id="e-moon"> Bright moon</label></div>' +
             '<details class="more"><summary>Party (for reactions and evasion)</summary><div class="ctl">' +
@@ -197,6 +200,7 @@ const Enc = (function () {
         $("e-day").onclick = function () { roll("day"); }; $("e-one").onclick = function () { roll("one"); };
         $("e-copy").onclick = function (ev) { if (last) copyText(last.text, ev.target); };
         el.addEventListener("click", cardAction);
+        el.addEventListener("change", function (e) { if (e.target.id === "e-climate") { st.mode = e.target.value; pick("data-mode", "\u0000"); fillTerrains(); } });
     }
     const terrainLabel = function (t) { return cap(t.replace(/([A-Z])/g, " $1").toLowerCase()); };
     // honeycomb: rows of four, every second row shifted half a hex
@@ -204,8 +208,9 @@ const Enc = (function () {
         const ts = st.mode ? modeTerrains(st.mode) : TERRAINS;
         if (ts.indexOf(st.terrain) < 0) st.terrain = ts[0];
         let rows = "";
-        for (let i = 0; i < ts.length; i += 4) rows += '<div class="hexrow' + (i % 8 ? " shift" : "") + '">' + ts.slice(i, i + 4).map(function (t) { return '<button type="button" class="hex' + (t === st.terrain ? " on" : "") + '" data-terrain="' + t + '" aria-pressed="' + (t === st.terrain) + '" title="' + esc(terrainLabel(t)) + '"><span>' + esc(terrainLabel(t)) + "</span></button>"; }).join("") + "</div>";
-        $("e-hex").innerHTML = rows;
+        for (let i = 0; i < ts.length; i += 4) rows += '<div class="hexrow' + (i % 8 ? " shift" : "") + '">' + ts.slice(i, i + 4).map(function (t) { return '<button type="button" class="hex' + (t === st.terrain ? " on" : "") + '" data-terrain="' + t + '" aria-pressed="' + (t === st.terrain) + '" aria-label="' + esc(terrainLabel(t)) + '" title="' + esc(terrainLabel(t)) + '"><span><i class="ic ic-t-' + (HEX_ICON[t] || "mountains") + '" aria-hidden="true"></i></span></button>'; }).join("") + "</div>";
+        $("e-hex").innerHTML = rows; $("e-tname").textContent = terrainLabel(st.terrain);
+        $("e-climate").value = LAND_MODES.indexOf(st.mode) >= 0 || !st.mode ? st.mode : "-";
         root.querySelectorAll("[data-dens]").forEach(function (b) { b.disabled = !!st.mode && !LAND_MODES.includes(st.mode); });
     }
     function pick(attr, val) { root.querySelectorAll("[" + attr + "]").forEach(function (b) { const on = b.getAttribute(attr) === val; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }); }
@@ -233,7 +238,7 @@ const Enc = (function () {
     }
     function cardAction(ev) {
         const t = ev.target.closest && ev.target.closest("[data-terrain],[data-mode],[data-dens],[data-goto]");
-        if (t && t.dataset.terrain) { st.terrain = t.dataset.terrain; pick("data-terrain", st.terrain); return; }
+        if (t && t.dataset.terrain) { st.terrain = t.dataset.terrain; pick("data-terrain", st.terrain); $("e-tname").textContent = terrainLabel(st.terrain); return; }
         if (t && t.dataset.mode !== undefined) { st.mode = t.dataset.mode; pick("data-mode", st.mode); fillTerrains(); return; }
         if (t && t.dataset.dens) { st.density = t.dataset.dens; pick("data-dens", st.density); return; }
         if (t && t.dataset.goto) { const card = document.getElementById(t.dataset.goto); if (card) card.scrollIntoView({ block: "start", behavior: "smooth" }); return; }
