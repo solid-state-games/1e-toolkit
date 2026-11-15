@@ -194,10 +194,9 @@ const Enc = (function () {
             '<label>Mount <select id="e-mount">' + Object.keys(MOUNTS).map(function (k) { return '<option value="' + k + '">' + MOUNTS[k].name + "</option>"; }).join("") + "</select></label>" +
             '<label>Load <select id="e-enc">' + Object.keys(ENCUMBRANCE).map(function (k) { return '<option value="' + k + '">' + ENCUMBRANCE[k].name + "</option>"; }).join("") + "</select></label>" +
             "</div></details>" +
-            '<div class="row"><button type="button" class="btn" id="e-day">Roll a day</button><button type="button" class="btn" id="e-one">Roll one encounter</button><button type="button" class="btn ghost" id="e-copy">Copy as text</button></div>' +
-            '<div id="e-out" class="out"><p class="muted">Pick a terrain and roll. Encounter checks follow DMG p.47; tables are DMG Appendix C.</p></div>';
+            '<div class="row"><button type="button" class="btn ghost" id="e-copy">Copy as text</button></div>' +
+            '<div id="e-out" class="out"><p class="muted">Click a terrain to roll a day there. Encounter checks follow DMG p.47; tables are DMG Appendix C.</p></div>';
         fillTerrains();
-        $("e-day").onclick = function () { roll("day"); }; $("e-one").onclick = function () { roll("one"); };
         $("e-copy").onclick = function (ev) { if (last) copyText(last.text, ev.target); };
         el.addEventListener("click", cardAction);
         el.addEventListener("change", function (e) { if (e.target.id === "e-climate") { st.mode = e.target.value; pick("data-mode", "\u0000"); fillTerrains(); } });
@@ -222,23 +221,15 @@ const Enc = (function () {
         s.reactionMod = parseInt($("e-rm").value, 10) || 0; s.partyAlignment = $("e-al").value; s.mount = $("e-mount").value; s.encumbrance = $("e-enc").value; s.brightMoon = $("e-moon").checked;
         return s;
     }
-    function roll(kind) {
-        const s = settings(), terrain = st.terrain, out = $("e-out");
-        let day;
-        if (kind === "day") day = rollDay(s, terrain);
-        else {
-            const period = { id: "one", label: "One encounter", icon: "\u{1F3B2}", light: "daylight" };
-            const enc = rollOutdoorEncounter(s, terrain, period); enc.light = "daylight";
-            const p = { id: "one", label: "One encounter", icon: "\u{1F3B2}", light: "daylight", status: enc.kind === "none" ? "clear" : "encounter", checkText: "Rolled directly, no check", encounter: enc.kind === "none" ? null : enc, note: enc.kind === "none" ? enc.reason : "" };
-            day = { terrain: terrain, settings: s, plan: { title: "One encounter", periods: [p] }, periods: [p] };
-        }
-        // a day: the grid, then cards for the encounters only (the grid's "none" and dash say the rest); one encounter: the card alone
-        out.innerHTML = '<div class="emeta">' + esc(day.plan ? (day.plan.title || "") : "") + " " + esc(terrain) + "</div>" + (kind === "day" ? dayGridHtml(day) : "") + dayCardsHtml(day, terrain, s, kind === "day");
+    // Clicking a terrain hex rolls a whole day there. Density, mode and the other settings only change what the next click rolls.
+    function rollDayNow() {
+        const s = settings(), terrain = st.terrain, day = rollDay(s, terrain);
+        $("e-out").innerHTML = '<div class="emeta">' + esc(day.plan ? (day.plan.title || "") : "") + " " + esc(terrain) + "</div>" + dayGridHtml(day) + dayCardsHtml(day, terrain, s, true);
         last = { day: day, terrain: terrain, settings: s, text: day.periods.map(function (p) { return cardPlainText(terrain, s.density, p); }).join("\n\n") };
     }
     function cardAction(ev) {
         const t = ev.target.closest && ev.target.closest("[data-terrain],[data-mode],[data-dens],[data-goto]");
-        if (t && t.dataset.terrain) { st.terrain = t.dataset.terrain; pick("data-terrain", st.terrain); $("e-tname").textContent = terrainLabel(st.terrain); return; }
+        if (t && t.dataset.terrain) { st.terrain = t.dataset.terrain; pick("data-terrain", st.terrain); $("e-tname").textContent = terrainLabel(st.terrain); rollDayNow(); return; }
         if (t && t.dataset.mode !== undefined) { st.mode = t.dataset.mode; pick("data-mode", st.mode); fillTerrains(); return; }
         if (t && t.dataset.dens) { st.density = t.dataset.dens; pick("data-dens", st.density); return; }
         if (t && t.dataset.goto) { const card = document.getElementById(t.dataset.goto); if (card) card.scrollIntoView({ block: "start", behavior: "smooth" }); return; }
