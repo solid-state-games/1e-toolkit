@@ -2,6 +2,7 @@
 //  1. Rolls hit points from the MM hit dice when a token with an exact MM name joins a fighting side (item metadata `cs` = {h:[hp,max]}; GM types the maximum otherwise).
 //  2. Draws a small number on each such token (OBR.scene.local: this client only, never saved, no metadata writes): the hit points, or "x" when 0 or less (dead).
 //     Players' clients draw nothing. Attached to the token, no hit, locked, top-right.
+//  2a. Hides monster names: blanks the map label of a token matching an MM name, once per token, unless the GM's setting says show (localStorage tk-names).
 //  3. Clears the per-token attack counts an earlier build wrote to `cs`, and cleans scene keys an earlier build left (undo, log/<round>, the old combat shape).
 // OBR calls used: player.getRole, scene.getMetadata/setMetadata/onMetadataChange/onReadyChange/isReady, scene.items.getItems/updateItems/getItemBounds/onChange, scene.local.getItems/addItems/deleteItems.
 export async function installCombatHp(OBR, NS, build) {
@@ -19,6 +20,9 @@ export async function installCombatHp(OBR, NS, build) {
             const items = await OBR.scene.items.getItems(i => i.layer === "CHARACTER");
             const stale = items.filter(i => CS.oldCs((i.metadata || {})[CS.CS]));
             if (stale.length) { await OBR.scene.items.updateItems(stale.map(i => i.id), d => d.forEach(x => { delete x.metadata[CS.CS]; })); return; }
+            const hide = (() => { try { return localStorage.getItem("tk-names") !== "show"; } catch (e) { return true; } })();
+            const bare = hide ? CS.unlabelIds(items) : [];
+            if (bare.length) { await OBR.scene.items.updateItems(bare, d => d.forEach(CS.unlabel)); return; }   // the change event comes back here
             if (!c) { if (mine.length) await OBR.scene.local.deleteItems(mine.map(i => i.id)); return; }
             const fighting = items.filter(i => c.ro.indexOf(i.id) >= 0 && CS.sideOf(c, c.ro.indexOf(i.id)) < c.sd.length);
             const join = fighting.filter(i => !(i.metadata || {})[SheetRules.KEY] && !((i.metadata || {})[CS.CS] || {}).h && CS.monsterOf(i.name));

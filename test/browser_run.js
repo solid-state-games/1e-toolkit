@@ -346,6 +346,7 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
     check('GM encounters: sylvan mode rolls (dice curve comes from the settings)', await g.ev('document.querySelectorAll(".egrid .ecell").length') > 0 && !/NaN|undefined/.test(await g.ev('document.getElementById("e-out").innerText')));
     await g.click('[data-gear]'); await g.sleep(100);
     check('Encounters dice curve is in the cog settings (GM hub), default Bell, remembered', await g.ev('document.getElementById("set-dice").value') === 'bell' && (await g.set('#set-dice', 'linear'), await g.ev('localStorage.getItem("tk-dice")') === 'linear'));
+    check('Monster names on the map is in the cog settings (GM hub), default Hidden, remembered, put back', await g.ev('document.getElementById("set-names").value') === 'hide' && (await g.set('#set-names', 'show'), await g.ev('localStorage.getItem("tk-names")') === 'show') && (await g.set('#set-names', 'hide'), await g.ev('localStorage.getItem("tk-names")') === 'hide'));
     await g.ev('document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))'); await g.sleep(100); await g.click('[data-terrain="plains"]'); await g.sleep(250);
     check('GM encounters: linear dice roll from the setting', !/NaN|undefined/.test(await g.ev('document.getElementById("e-out").innerText')) && await g.ev('document.querySelectorAll(".egrid .ecell").length') > 0);
     await g.ev('localStorage.removeItem("tk-dice")');

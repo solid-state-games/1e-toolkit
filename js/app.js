@@ -390,6 +390,9 @@ function tkToggleTheme() {
 /* the Encounters dice curve (Bell = MM II p.5 dice, Linear = flat): a per-browser setting like the others, default Bell */
 function tkDice() { try { return localStorage.getItem("tk-dice") === "linear" ? "linear" : "bell"; } catch (e) { return "bell"; } }
 
+/* monster names on the map: hidden by default (GM, per browser); combat_hp.js in the background page reads the same key */
+function tkNames() { try { return localStorage.getItem("tk-names") !== "show"; } catch (e) { return true; } }
+
 /* text size and spacing (like Gmail's density setting): per browser, applied to <html> */
 function tkSetView(kind, v) {
     const r = document.documentElement;
@@ -418,7 +421,8 @@ function tkOpenSettings(kind, from) {
         '<label class="setrow">Text size <select id="set-size">' + opt("s", "Small", z) + opt("m", "Medium", z) + opt("l", "Large", z) + "</select></label>" +
         '<label class="setrow">Spacing <select id="set-density">' + opt("compact", "Compact", d) + opt("default", "Default", d) + opt("comfortable", "Comfortable", d) + "</select></label>" +
         '<div class="setrow">Theme <button type="button" class="btn ghost" id="set-theme">Light / Dark</button></div>';
-    if (kind === "hub" && TK.role === "GM") h += '<label class="setrow">Encounter dice <select id="set-dice"><option value="bell"' + (tkDice() === "bell" ? " selected" : "") + '>Bell (MM II p.5 dice)</option><option value="linear"' + (tkDice() === "linear" ? " selected" : "") + ">Linear (flat)</option></select></label>";
+    if (kind === "hub" && TK.role === "GM") h += '<label class="setrow">Encounter dice <select id="set-dice"><option value="bell"' + (tkDice() === "bell" ? " selected" : "") + '>Bell (MM II p.5 dice)</option><option value="linear"' + (tkDice() === "linear" ? " selected" : "") + ">Linear (flat)</option></select></label>" +
+        '<label class="setrow" title="Blanks the map label of a monster token when it is put out; the token keeps its name for the Monster Manual">Monster names on the map <select id="set-names"><option value="hide"' + (tkNames() ? " selected" : "") + '>Hidden</option><option value="show"' + (tkNames() ? "" : " selected") + ">Shown</option></select></label>";
     if (kind === "sheet" || kind === "sheetro") {
         h += '<div class="setacts">' + (kind === "sheet" ? '<button type="button" class="btn" data-act="savenow">Save now</button>' : "") + '<button type="button" class="btn ghost" data-act="export">Export JSON</button><button type="button" class="btn ghost" data-act="copyjson">Copy JSON</button>' +
             (kind === "sheet" ? '<button type="button" class="btn ghost" data-act="import">Import JSON</button><button type="button" class="btn ghost" data-act="newchar" title="Start a new character on this token (asks first)">New character</button>' : "") + "</div>";
@@ -430,6 +434,7 @@ function tkOpenSettings(kind, from) {
     document.getElementById("set-density").onchange = function () { tkSetView("density", this.value); };
     document.getElementById("set-theme").onclick = tkToggleTheme;
     if (document.getElementById("set-dice")) document.getElementById("set-dice").onchange = function () { try { localStorage.setItem("tk-dice", this.value); } catch (e) { /* no storage */ } };
+    if (document.getElementById("set-names")) document.getElementById("set-names").onchange = function () { try { localStorage.setItem("tk-names", this.value); } catch (e) { /* no storage */ } };
     document.getElementById("set-size").focus();
 }
 document.addEventListener("click", function (e) { const g = e.target.closest("[data-gear]"); if (g) tkOpenSettings(g.dataset.gear, g); });

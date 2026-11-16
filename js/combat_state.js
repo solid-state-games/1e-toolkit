@@ -162,12 +162,19 @@ const CombatState = (function () {
         return o;
     }
     // old per-token attack counts in `cs` ({rs, at, mx}) are no longer used
+    /* hide monster names (GM setting, default on): blank the map label of a token that matches the MM, once (flag NL), so a label the GM types back later stays. item.name is kept for the MM lookup. */
+    const NL = NS + "/nl";
+    function unlabelIds(items) { return items.filter(function (i) { const m = i.metadata || {}; return !m[NS + "/sheet"] && !m[NL] && monsterOf(i.name); }).map(function (i) { return i.id; }); }
+    function unlabel(x) {
+        if (x.text) { x.text.plainText = ""; if (Array.isArray(x.text.richText)) x.text.richText = [{ type: "paragraph", children: [{ text: "" }] }]; }
+        x.metadata[NL] = 1;
+    }
     const oldCs = function (cs) { return !!cs && (cs.rs !== undefined || cs.at !== undefined || cs.mx !== undefined); };
     function clearPatch(meta) { const o = {}; Object.keys(meta || {}).forEach(function (k) { if (k === KEY || k === PRE || k === NS + "/undo" || k.indexOf(NS + "/log/") === 0) o[k] = undefined; }); o[KEY] = undefined; return o; }
     return { NS: NS, KEY: KEY, PRE: PRE, CS: CSK, TIE_NOTE: TIE_NOTE, create: create, clampRange: clampRange, sideOf: sideOf, moveToken: moveToken, fighters: fighters, sidesPatch: sidesPatch,
         setRange: setRange, setSurprise: setSurprise, surpriseReady: surpriseReady, surpriseSegs: surpriseSegs, surpriseWords: surpriseWords, rollInit: rollInit, initText: initText,
         roundInTurn: roundInTurn, nextRound: nextRound, hit: hit, moraleFlags: moraleFlags, addSpell: addSpell,
         hpEdit: hpEdit, isDead: isDead, rollHd: rollHd, casualties: casualties, monsterOf: monsterOf, sideFacts: sideFacts, deriveRanges: deriveRanges, applyRanges: applyRanges,
-        read: read, migrate: migrate, cleanPatch: cleanPatch, oldCs: oldCs, clearPatch: clearPatch };
+        read: read, migrate: migrate, cleanPatch: cleanPatch, oldCs: oldCs, clearPatch: clearPatch, unlabelIds: unlabelIds, unlabel: unlabel };
 })();
 if (typeof module !== "undefined" && module.exports) module.exports = CombatState;
