@@ -230,7 +230,7 @@ const CombatUI = (function () {
     async function loadItems() {
         try { players = (await TK.OBR.party.getPlayers()).filter(function (p) { return p.role === "PLAYER"; }); } catch (e) { players = []; }
         // the dev room's "(your token)" style suffixes never show in combat labels
-        items = (await TK.OBR.scene.items.getItems(function (i) { return i.layer === "CHARACTER"; })).map(function (i) { i.name = String(i.name || "").replace(/\s*\((your token|other player|GM token)\)\s*$/i, ""); return i; }).sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+        items = (await TK.OBR.scene.items.getItems(function (i) { return i.layer === "CHARACTER"; })).map(function (i) { i.name = String(i.name || "").replace(/\s*\((your token|other player|GM token)\)\s*$/i, "").replace(SheetRules.AC_SUFFIX, ""); return i; }).sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
         render();
     }
 

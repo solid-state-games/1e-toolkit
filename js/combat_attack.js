@@ -40,7 +40,7 @@ const CombatAttack = (function () {
         if (att.kind !== "pc" || !att.rows) return null;
         const w = att.weapons[wi], base = (w && w.kind === "missile" ? att.rows.missile : att.rows.melee)[a];
         const adj = w && type !== null && type !== undefined ? w.adj[TYPES.indexOf(type)] || 0 : 0;
-        return base - adj - bonus;
+        return base - adj - bonus - ((w && w.hitExtra) || 0); // hitExtra: magic plus, non-proficiency and two-weapon penalties (sheet_rules handView)
     }
     // PHB p.38 rate of fire: 1, 2, 3, "1½", "½"
     const rateOf = function (w) { const r = String(w.rate || "1"); if (r === "½") return 0.5; const m = /^(\d+)(½)?/.exec(r); return m ? Number(m[1]) + (m[2] ? 0.5 : 0) : 1; };
@@ -56,7 +56,7 @@ const CombatAttack = (function () {
     function damageText(f, wi) {
         if (f.kind === "mon") return "damage " + (f.d.damage || "see MM");
         if (f.kind !== "pc" || !f.weapons[wi]) return "";
-        const w = f.weapons[wi], b = w.dmgMod ? " " + (w.dmgMod > 0 ? "+" : "") + w.dmgMod + " STR" : "";
+        const w = f.weapons[wi], sg = function (n) { return (n > 0 ? "+" : "") + n; }, b = (w.strDmg ? " " + sg(w.strDmg) + " STR" : "") + (w.bonus ? " " + sg(w.bonus) + " magic" : "");
         return "damage " + w.sm + " vs S-M, " + w.lg + " vs L" + b;
     }
     const speedText = function (f, wi) { const w = f.kind === "pc" && f.weapons[wi]; return w && w.spd !== null && w.spd !== undefined && w.spd !== "" ? "speed " + w.spd : ""; };

@@ -80,7 +80,7 @@ for (let i = 0; i < 20; i++) {
     if (!same || !atkOk || !mvOk || !spOk || v.errors.length) bad.push(i);
 }
 check('(b) sheet figures equal derive() for 20 spot characters', bad.length === 0, bad.join(','));
-const fighter = SR.sanitize(Object.assign(SR.blank(), { cl: ['Fighter'], lv: [7], sc: [18, 10, 10, 16, 15, 10], ex: 60, pf: ['Sword, Long & scabbard'] }));
+const fighter = SR.sanitize(Object.assign(SR.blank(), { cl: ['Fighter'], lv: [7], sc: [18, 10, 10, 16, 15, 10], ex: 60, pf: ['Sword, Long & scabbard'], inv: [['Sword, Long & scabbard', 1, 'h']] }));
 const fv = SR.compute(fighter);
 check('(b) known fighter: Str 18/60 hit +2 dam +3, 3/2 attacks, weapon row found', fv.d.abilities.str.hit === 2 && fv.d.abilities.str.dmg === 3 && fv.attacksPerRound === '3/2' && fv.weapons.length === 1 && fv.weapons[0].adj.length === 9,
     JSON.stringify([fv.d.abilities.str.hit, fv.d.abilities.str.dmg, fv.attacksPerRound, fv.weapons.length]));
@@ -233,7 +233,7 @@ const dv = s => SR.compute(s).d;
 {
     const SS = sandbox.SheetSimple;
     const th = SR.sanitize(Object.assign(SR.blank(), { nm: 'Sneak', race: 'Halfling', sub: 'Stout', cl: ['Thief'], lv: [6], sc: [9, 12, 9, 17, 12, 10], al: 'N', hp: 20, hm: 24, pf: ['Dagger and scabbard', 'Sling'],
-        inv: [['Leather', 1], ['Shield, small', 1], ['Dagger and scabbard', 2], ['Rope, 50\'', 1], ['Sling stone', 20], ['Dart', 6]], co: [1, 22, 0, 3, 0],
+        inv: [['Leather', 1], ['Shield, small', 1], ['Dagger and scabbard', 2, 'h'], ['Rope, 50\'', 1], ['Sling stone', 20], ['Dart', 6, 'r']], co: [1, 22, 0, 3, 0],
         hn: [['Henchy', 'Human', 'Fighter', 1, 5, 10, '', 0, '', '', [3, 3]]] }));
     const tv = SR.compute(th), page = SS.html(tv, true);
     const text = page.replace(/<[^>]*>/g, ' ');
@@ -365,7 +365,7 @@ else {
             if (nGen) spellsSeen++;
             // every item is a row or named in the notes
             const rows = sh.inv.map(r => r[0]).join('|');
-            rec.equipment.forEach(e => { const plain = /^(Plate Mail|Banded Mail|Splint Mail|Chain Mail|Scale Mail|Studded Leather|Ring Mail|Leather Armor|Padded Armor|Shield|Long Sword|Dagger|Mace|Scimitar|Staff|Spear|Long Bow & Arrows|Thieves' Picks & Tools)$/.test(e); if (plain ? false : !sh.nt.includes(e) || !rows.includes(e.slice(0, 60))) bad.push(tag + ' item lost ' + e); });
+            rec.equipment.forEach(e => { const plain = /^(Plate Mail|Banded Mail|Splint Mail|Chain Mail|Scale Mail|Studded Leather|Ring Mail|Leather Armor|Padded Armor|Shield|Long Sword|Dagger|Mace|Scimitar|Staff|Spear|Long Bow & Arrows|Thieves' Picks & Tools)$/.test(e); const mw = /^(Long Sword|Dagger|Mace|Scimitar|Staff|Spear|Battle Axe|Long Bow|Javelin) \+(\d)$/.exec(e); if (mw ? !sh.inv.some(r => SR.entryParts(r).bonus === Number(mw[2])) : plain ? false : !sh.nt.includes(e) || !rows.includes(e.slice(0, 60))) bad.push(tag + ' item lost ' + e); });
             if (rec.equipment.filter(e => /^(Plate Mail|Banded Mail|Chain Mail|Studded Leather|Leather Armor|Shield|Long Sword|Dagger|Mace|Scimitar|Staff)$/.test(e)).length && !sh.inv.length) bad.push(tag + ' no rows');
             if (rec.equipment.some(e => /\+\d|Ring|Potion|Scroll|Wand/.test(e))) magicSeen++;
             if (/Thief|Assassin|Monk/.test(sh.cl.join()) && v.thief) { thiefN++; const t = v.thief['Climb Walls']; if (t && rec.skills && rec.skills.includes('Climb Walls ' + t.total + '%')) thiefSame++; }
@@ -588,7 +588,7 @@ if (fs.existsSync(path.join(root, '..', '..', '..', 'ADD-BOOKS-PDF', 'TEXT'))) {
     c = mk();
     check('(n) spell rounds: a name and at least 1 round, kept per PC, counted down by Next round', CS.addSpell(c, 0, 'Web', 3) && !CS.addSpell(c, 0, '', 3) && !CS.addSpell(c, 0, 'x', 0) && c.sp.length === 1);
     // to-hit both ways against COMBAT_CALC
-    const pcSheet = Object.assign(SR.blank(), { race: 'Human', cl: ['Fighter'], lv: [7], sc: [10, 10, 10, 10, 10, 10], pf: ['Sword, Long & scabbard', 'Bow, long', 'Crossbow, light', 'Crossbow, heavy', 'Dart'], inv: [['Chain', 1], ['Shield, small', 1]] });
+    const pcSheet = Object.assign(SR.blank(), { race: 'Human', cl: ['Fighter'], lv: [7], sc: [10, 10, 10, 10, 10, 10], pf: ['Sword, Long & scabbard', 'Bow, long', 'Crossbow, light', 'Crossbow, heavy', 'Dart'], inv: [['Chain', 1], ['Shield, small', 1], ['Sword, Long & scabbard', 1, 'h'], ['Bow, long', 1, 'r'], ['Crossbow, light', 1, 'r'], ['Crossbow, heavy', 1, 'r'], ['Dart', 3, 'r']] });
     const pcItem = { name: 'Aldric', metadata: { [SR.KEY]: SR.sanitize(pcSheet) } }, pcf = CA.facts(pcItem), wi = n => pcf.weapons.findIndex(w => w.name === n), wref = n => G('WEAPONS').findIndex(w => w.name === n);
     let badN = 0, cells = 0;
     [['Sword, long'], ['Bow, long']].forEach(([wn]) => { for (let ac2 = -2; ac2 <= 10; ac2++) for (const am of [0, 2, 5, 6]) { const ref = GC.toHitState({ cls: 'fighter', lv: 7, wi: wref(wn), ac: ac2, armorIdx: am, shield: false, bonus: 0, penalty: 0, sit: 0, range: 'S', size: 'SM' }); cells++; if (CA.need(pcf, wi(wn), ac2, G('acType')(am, false), 0) !== ref.need) badN++; } });
@@ -619,7 +619,7 @@ if (fs.existsSync(path.join(root, '..', '..', '..', 'ADD-BOOKS-PDF', 'TEXT'))) {
 // ---- (o) combat v2b: the Party | Foes row (target, to hit, damage, roll, apply), hits tally, sheet weapon roll
 {
     const CS = G('CombatState'), CA = G('CombatAttack'), GC = G('GMCombat'), seq = a => { let k = 0; return () => a[k++ % a.length]; };
-    const mkSheet = (o) => SR.sanitize(Object.assign(SR.blank(), { race: 'Human', cl: ['Fighter'], lv: [7], sc: [10, 10, 10, 10, 10, 10], pf: ['Sword, Long & scabbard', 'Bow, long', 'Dagger and scabbard'], inv: [['Chain', 1], ['Shield, small', 1]] }, o || {}));
+    const mkSheet = (o) => SR.sanitize(Object.assign(SR.blank(), { race: 'Human', cl: ['Fighter'], lv: [7], sc: [10, 10, 10, 10, 10, 10], pf: ['Sword, Long & scabbard', 'Bow, long', 'Dagger and scabbard'], inv: [['Chain', 1], ['Shield, small', 1], ['Sword, Long & scabbard', 1, 'h'], ['Bow, long', 1, 'r']] }, o || {}));
     const pc = CA.facts({ name: 'Aldric', metadata: { [SR.KEY]: mkSheet() } }), pc2 = CA.facts({ name: 'Brenna', metadata: { [SR.KEY]: mkSheet({ sc: [17, 10, 10, 10, 10, 10] }) } });
     const ogre = CA.facts({ name: 'Ogre', metadata: {} }), ape = CA.facts({ name: 'Ape, carnivorous', metadata: {} }), gob = CA.facts({ name: 'Goblin 2', metadata: {} }), npc = CA.facts({ name: 'Old Bob', metadata: {} });
     const wl = pc.weapons.findIndex(w => w.name === 'Sword, long'), wb = pc.weapons.findIndex(w => w.name === 'Bow, long');
@@ -648,6 +648,78 @@ if (fs.existsSync(path.join(root, '..', '..', '..', 'ADD-BOOKS-PDF', 'TEXT'))) {
     check('(o) sheet weapon roll for a missile weapon uses the DEX missile bonus (DEX 16 +1) and no STR damage; a natural 20 hits more, an unreachable roll says so', rb.bonus === v7.weapons.filter(w => w.name === 'Bow, long')[0].hitMod && rb.d20 === 20 && rb.sm === 4 && rb.lg === 4 && rb.ac !== null && SR.rollWeapon(v7, W7, seq([0.0, 0.0, 0.0])).d20 === 1 && /^Sword, long: rolled 1 \(\+1\) = 2;/.test(SR.rollWeapon(v7, W7, seq([0.0, 0.0, 0.0])).text));
     const old2 = { v: 2, on: 1, rd: 2, tn: 1, w: -1, ro: ['a'], nf: [], sd: [{ n: 'Party', ra: 2, sr: 0, in: 0, m: [0] }, { n: 'Foes', ra: 2, sr: 0, in: 0, m: [] }], pr: [[0, 1, 0, 0, null, null]], ht: [0, 0], lh: null, sp: [] }, cp = CS.cleanPatch({ [SR.NS + '/combat']: old2 });
     check('(o) clean-up on load drops the old pairs from a v0.6 combat and gives it an empty result map; combat state keeps working without them', !('pr' in cp[SR.NS + '/combat']) && cp[SR.NS + '/combat'].rd === 2 && (() => { const m = { [SR.NS + '/combat']: old2 }; return CS.read(m).c.rr !== undefined; })());
+}
+
+{
+    // ---- (p) v0.9.0: weapons in hand, magic bonus, proficiency, two weapons (DMG p.70), token name
+    const SWD = 'Sword, Long & scabbard', DAG = 'Dagger and scabbard', SPR = 'Spear', BOW = 'Bow, long', HAX = 'Axe, hand or throwing', ARR = 'Arrow, normal (12)';
+    const mk = (o) => SR.sanitize(Object.assign(SR.blank(), { nm: 'Aldric Thistlewood', race: 'Human', cl: ['Fighter'], lv: [5], sc: [10, 10, 10, 10, 10, 10], pf: [SWD, DAG, HAX] }, o || {}));
+    const names = v => v.weapons.map(w => w.name + (w.kind === 'missile' ? '*' : '')).join(',');
+    const a = SR.compute(mk({ inv: [[SWD, 1, 'h'], [DAG, 1], [SPR, 1, '1'], [BOW, 1, 'r'], [ARR, 2, 'r'], [HAX, 1, 'x']], lp: [['Inn', 0, 0, 0, 0, 0]], pf: [DAG, SPR] }));
+    check('(p) weapons table = carried In hand or Ready only (not proficient-only, not carried-unmarked, not left at a place)', names(a) === 'Sword, long,Bow, long*', names(a));
+    const b = mk({ inv: [[SWD, 1, 'h']], lp: [['Inn', 0, 0, 0, 0, 0]] }), b2 = SR.moveItem(JSON.parse(JSON.stringify(b)), 0, 1, 0);
+    check('(p) an item moved to a place loses its hand mark and never shows in the table; moving back leaves it unmarked', SR.locOf(b2.inv[0]) === 1 && SR.compute(b2).weapons.length === 0 && SR.setHand(b2, 0, 'h').inv[0].length === 3 && SR.compute(b2).weapons.length === 0 && SR.compute(SR.moveItem(b2, 0, 0, 0)).weapons.length === 0);
+    check('(p) a hand mark written on a place row (hostile save) is dropped by sanitize', SR.sanitize({ lp: [['Inn', 0, 0, 0, 0, 0]], inv: [[SWD, 1, 'h', '1']] }).inv.every(e => !/h/.test(e.slice(2).join(''))) && SR.compute(SR.sanitize({ inv: [[SWD, 1, '1h']], lp: [['Inn', 0, 0, 0, 0, 0]] })).weapons.length === 0);
+    const base = SR.compute(mk({ inv: [[SWD, 1, 'h']] })).weapons[0], plus = SR.compute(mk({ inv: [[SWD, 1, 'h+2']] })).weapons[0], minus = SR.compute(mk({ inv: [[SWD, 1, 'h-1']] })).weapons[0];
+    check('(p) Bonus +2 adds to hit and to damage; -1 subtracts (DMG p.168); both shown in the roll line', plus.hitMod === base.hitMod + 2 && plus.dmgMod === base.dmgMod + 2 && minus.hitMod === base.hitMod - 1 && minus.dmgMod === base.dmgMod - 1 && /rolled/.test(SR.rollWeapon(SR.compute(mk({ inv: [[SWD, 1, 'h+2']] })), plus, () => 0.5).text));
+    check('(p) Bonus is clamped to -5..+5 and set through setBonus; the name is not parsed ("Sword +3" in the name adds nothing)', SR.entryParts(SR.setBonus(mk({ inv: [[SWD, 1, 'h']] }), 0, 9).inv[0]).bonus === 5 && SR.entryParts(SR.setBonus(mk({ inv: [[SWD, 1, 'h']] }), 0, -9).inv[0]).bonus === -5 && SR.entryParts(SR.setBonus(mk({ inv: [[SWD, 1, 'h+3']] }), 0, 0).inv[0]).bonus === 0 && SR.sanitize({ inv: [[SWD, 1, 'h+9']] }).inv[0].length === 3 && SR.compute(mk({ inv: [['Sword +3', 1, 'h']] })).weapons.length === 0);
+    const arrB = SR.compute(mk({ inv: [[BOW, 1, 'r'], [ARR, 1, 'r+1']] })).weapons[0], arr0 = SR.compute(mk({ inv: [[BOW, 1, 'r'], [ARR, 1, 'r']] })).weapons[0];
+    check('(p) Ready ammunition Bonus +1 adds to hit and damage of the matching missile weapon', arrB.hitMod === arr0.hitMod + 1 && arrB.dmgMod === arr0.dmgMod + 1);
+    const np = SR.compute(mk({ inv: [[SWD, 1, 'h']], pf: [] })), pr = SR.compute(mk({ inv: [[SWD, 1, 'h']] })), mu = SR.compute(mk({ cl: ['Magic-User'], inv: [[DAG, 1, 'h']], pf: [] }));
+    check('(p) not proficient: the class penalty (fighter -2, magic-user -5, PHB p.37) is added to hit adj; proficient has none and a P flag', np.d.weaponProf.nonProficiencyPenalty === -2 && np.weapons[0].hitMod === pr.weapons[0].hitMod - 2 && !np.weapons[0].prof && pr.weapons[0].prof && mu.weapons.filter(w => w.kind === 'melee')[0].npen === -5);
+    // DMG p.70 table
+    const pen = (dex) => SR.offHandPenalty(dex, SR.compute(mk({ sc: [10, 10, 10, dex, 10, 10] })).d.abilities.dex.reaction);
+    const tbl = [5, 10, 16, 17, 18].map(d => { const q = pen(d); return d + ':' + q.primary + '/' + q.secondary; }).join(' ');
+    check('(p) DMG p.70 two-weapon penalties primary/secondary: Dex 5 -3/-5 (PHB reaction -1 on EACH), 10 -2/-4, 16 -1/-3, 17 0/-2, 18 0/-1', tbl === '5:-3/-5 10:-2/-4 16:-1/-3 17:0/-2 18:0/-1', tbl);
+    const two = SR.compute(mk({ sc: [10, 10, 10, 17, 10, 10], inv: [[SWD, 1, 'h'], [DAG, 1, 'o'], ['Shield, small', 1]] })), one = SR.compute(mk({ sc: [10, 10, 10, 17, 10, 10], inv: [[SWD, 1, 'h'], [DAG, 1]] }));
+    const sw1 = one.weapons.filter(w => w.name === 'Sword, long')[0], sw2 = two.weapons.filter(w => w.name === 'Sword, long')[0], dg2 = two.weapons.filter(w => w.name === 'Dagger' && w.kind === 'melee')[0];
+    check('(p) with a dagger off hand the table shows primary and secondary penalties (Dex 17: 0 and -2), the two-weapon note and the shield warning (DMG p.70)', sw2.hitMod === sw1.hitMod && dg2.hitMod === sw1.hitMod - 2 && dg2.hand === 'o' && two.twoWeapons && two.twoWeapons.secondary === -2 && two.twoWeapons.shield === true && one.twoWeapons === null && /discarding the option of using a shield/.test(SheetSimpleHtml(two)));
+    function SheetSimpleHtml(v) { return sandbox.SheetSimple.html(v, true); }
+    const dex10 = SR.compute(mk({ inv: [[SWD, 1, 'h'], [DAG, 1, 'o']] }));
+    check('(p) Dex 10 off hand: sword -2, dagger -4 on top of Strength', dex10.weapons.filter(w => w.name === 'Sword, long')[0].hitMod === -2 && dex10.weapons.filter(w => w.name === 'Dagger' && w.kind === 'melee')[0].hitMod === -4);
+    const oh1 = SR.setHand(mk({ inv: [[SWD, 1, 'h'], [SPR, 1], [DAG, 1], [HAX, 1]] }), 1, 'o'), oh2 = SR.setHand(JSON.parse(JSON.stringify(oh1)), 2, 'o'), oh3 = SR.setHand(JSON.parse(JSON.stringify(oh2)), 3, 'o'), oh4 = SR.setHand(mk({ inv: [[DAG, 1]] }), 0, 'o');
+    check('(p) Off hand only for a dagger or hand axe while another melee weapon is in hand; one off hand at a time; with nothing else in hand it is just in hand', SR.entryParts(oh1.inv[1]).flag === '' && SR.entryParts(oh2.inv[2]).flag === 'o' && SR.entryParts(oh3.inv[3]).flag === 'o' && SR.entryParts(oh3.inv[2]).flag === 'h' && SR.entryParts(oh4.inv[0]).flag === 'h' &&
+        SR.entryParts(SR.setHand(SR.setHand(mk({ inv: [[SWD, 1, 'h'], [DAG, 1]] }), 1, 'o'), 0, '').inv[1]).flag === 'h' && SR.sanitize({ inv: [[SWD, 1, 'o'], [SPR, 1, 'o']] }).inv.every(e => e.length === 2));
+    const old = { v: 1, nm: 'Old Hand', cl: ['Fighter'], lv: [3], sc: [16, 10, 10, 12, 14, 10], pf: [SWD], lp: [['Inn', 0, 5, 0, 0, 0]], inv: [['Chain', 1, 'x'], ['Shield, small', 1], [SWD, 1], [DAG, 2, '1'], ['Ring of Protection +1', 1, 0, 'w'], ["Rope, 50'", 1, 7.5]] };
+    const olds = SR.sanitize(old);
+    const wOld = SR.compute(olds).weapons.map(w => w.name).join();
+    check('(p) an old v1 sheet migrates once: the proficient sword goes In hand, other rows (worn marks, place, ring, rope) unchanged, same AC; the next save is v2 and unticking sticks', olds.v === 2 && JSON.stringify(olds.inv.filter((e, i) => i !== 2)) === JSON.stringify(old.inv.filter((e, i) => i !== 2)) && JSON.stringify(olds.inv[2]) === JSON.stringify([SWD, 1, 'h']) && wOld === 'Sword, long' && SR.compute(old).d.ac === SR.compute(SR.setHand(JSON.parse(JSON.stringify(olds)), 2, '')).d.ac && SR.compute(SR.setHand(JSON.parse(JSON.stringify(olds)), 2, '')).weapons.length === 0 && SR.pack(olds) === SR.pack(SR.sanitize(JSON.parse(SR.pack(olds)))));
+    // migration: Ready bow + its ammunition, creators, Quick Party magic weapon, unsaved sheets
+    const mig = SR.sanitize({ v: 1, pf: [BOW, DAG], inv: [[BOW, 1], [ARR, 2], ['Quarrel/Bolt, light (single)', 5], [DAG, 1], [SPR, 1], ['Long Sword +1', 1, 6], ['Dagger +2', 1, 1], [SWD, 1, '1'], ['Mace +1', 1, 10]], lp: [['Inn', 0, 0, 0, 0, 0]], pf2: 1 });
+    const migF = r => r.map(e => JSON.stringify(e)).join('');
+    check('(p) migration: proficient bow and dagger go Ready/In hand, matching arrows go Ready, bolts (no crossbow) and the unproficient spear stay unmarked', JSON.stringify(mig.inv.slice(0, 5)) === JSON.stringify([[BOW, 1, 'r'], [ARR, 2, 'r'], ['Quarrel/Bolt, light (single)', 5], [DAG, 1, 'h'], [SPR, 1]]), migF(mig.inv.slice(0, 5)));
+    check('(p) Quick Party magic weapon rows ("Dagger +2", "Mace +1") become the price-list weapon with a Bonus; a custom armour-like or odd item is left', mig.inv.some(e => e[0] === DAG && SR.entryParts(e).bonus === 2) && mig.inv.some(e => e[0] === "Mace, footman's" && SR.entryParts(e).bonus === 1) && !mig.inv.some(e => /\+\d$/.test(e[0])));
+    const qp = SR.fromQuickParty({ race: 'Human', classes: ['Fighter'], levels: [3], stats: { str: 16, int: 10, wis: 10, dex: 10, con: 10, cha: 10 }, align: 'True Neutral', xp: 0, hp: 20, ac: 5, equipment: ['Chain Mail', 'Long Sword', 'Long Sword +1', 'Long Bow & Arrows', 'Dagger'], spells: '' }, 'Q', '');
+    check('(p) a new Quick Party PC opens with its sword In hand, bow and arrows Ready, and the +1 sword is a Bonus row (not custom)', qp.v === 2 && qp.inv.some(e => e[0] === SWD && SR.entryParts(e).flag === 'h') && qp.inv.some(e => e[0] === BOW && SR.entryParts(e).flag === 'r') && qp.inv.some(e => e[0] === ARR && SR.entryParts(e).flag === 'r') && qp.inv.some(e => SR.entryParts(e).bonus === 1) && SR.compute(qp).weapons.length >= 3, JSON.stringify(qp.inv));
+    const rp = SR.randomPC({ band: '1', method: 1, appP: false, name: 'T' });
+    check('(p) a Random PC fighter-type with proficiencies opens with weapons In hand', !rp.sheet.pf.length || SR.compute(rp.sheet).weapons.length > 0 || rp.sheet.inv.every(e => !SR.weaponInfo(SR.entryParts(e).core)));
+    check('(p) migration also applies in memory to an unsaved v1 sheet through compute (GM combat card), without touching the stored sheet', (() => { const raw = { v: 1, cl: ['Fighter'], pf: [SWD], inv: [[SWD, 1]] }, before = JSON.stringify(raw); return SR.compute(raw).weapons.length === 1 && JSON.stringify(raw) === before; })());
+    const mxw = SR.sanitize(JSON.parse(JSON.stringify(maxChar)));
+    mxw.lp = Array.from({ length: SR.LIM.places }, (_, k) => ['P'.repeat(SR.LIM.place - 2) + k, 99999, 99999, 99999, 99999, 99999]);
+    mxw.inv = mxw.inv.map((e, i) => { const r = e.slice(); r.push((i % 2 ? String(1 + (i % SR.LIM.places)) : 'h') + '+5'); return r; });
+    mxw.hn = Array.from({ length: SR.LIM.hench }, () => ['N'.repeat(SR.LIM.hname), 'Half-Elf', 'Fighter/Magic-User'.slice(0, SR.LIM.hclass), 30, 999, -10, 's'.repeat(SR.LIM.hshare), 99999, '12345678-1234-1234-1234-123456789abc', 'x'.repeat(SR.LIM.hnote), SR.LOY_CATS.map(c => c.o.length).concat([SR.LOY_PENALTY.length, SR.LOY_BONUS.length])]);
+    mxw.hr = Array.from({ length: SR.LIM.hire }, (_, k) => [k % 2, k % 2 ? SR.EXPERTS.length - 1 : SR.SOLDIERS.length - 1, 9999, k % 2 ? 99999 : 9999, 'n'.repeat(SR.LIM.hirenote)]);
+    const mxs = SR.sanitize(mxw), mxb = SR.bytes(SR.pack(mxs)), bonusRows = mxs.inv.filter(e => SR.entryParts(e).bonus === 5).length;
+    check('(p) maximal sheet with a +5 Bonus on every weapon and ammunition row (places and hand marks) is still under 16,000 bytes and round-trips', mxb < SR.MAX_BYTES && bonusRows > 10 && JSON.stringify(SR.sanitize(JSON.parse(SR.pack(mxs)))) === JSON.stringify(mxs) && !SR.compute(mxs).errors.length, mxb + ' B, ' + bonusRows + ' bonus rows');
+    const tn = SR.tokenName(mk({ inv: [['Chain', 1], ['Shield, small', 1]], sc: [10, 10, 10, 10, 10, 10] })), acNow = SR.compute(mk({ inv: [['Chain', 1], ['Shield, small', 1]] })).d.ac;
+    check('(p) token name = first name + (AC n) from the derived AC, e.g. "Aldric (AC ' + acNow + ')"; a blank character name returns "" (token left alone); plainName strips it', tn === 'Aldric (AC ' + acNow + ')' && SR.tokenName(mk({ nm: '   ' })) === '' && SR.tokenName(mk({ nm: '' })) === '' && SR.plainName(tn) === 'Aldric' && SR.tokenName(mk({ nm: 'Mira', inv: [['Chain', 1]] })) !== SR.tokenName(mk({ nm: 'Mira', inv: [] })));
+    const CSt = G('CombatState');
+    check('(p) CombatState.monsterOf: "Orc" and a GM token "Orc (AC 6)" are still monsters (no guard on names); a PC named "Aldric (AC 4)" is no monster; combat facts for a sheet token are a PC either way', !!CSt.monsterOf('Orc') && !!CSt.monsterOf('Orc (AC 6)') && CSt.monsterOf('Aldric (AC 4)') === null && G('CombatAttack').facts({ name: 'Orc (AC 4)', metadata: { [SR.KEY]: mk({ nm: 'Orc' }) } }).kind === 'pc');
+    {
+        const rr = SR.compute(mk({ inv: [[SWD, 1, 'h']] })), r5 = SR.compute(mk({ inv: [[SWD, 1, 'h+5']] })), rn = SR.compute(mk({ inv: [[SPR, 1, 'h']] })), rpf = SR.compute(mk({ inv: [[SPR, 1, 'h']], pf: [SPR] }));
+        const hitAc = (v, nm) => SR.rollWeapon(v, v.weapons.filter(w => w.name.indexOf(nm) === 0 && w.kind === 'melee')[0], () => 0.5).ac;   // d20 = 11 every time
+        check('(p) sheet roll AC verdict adds hitExtra: the same d20 with +5 hits a better armour than +0 (by 5), a non-proficient spear a worse one (by 2)', hitAc(r5, 'Sword') === hitAc(rr, 'Sword') - 5 && hitAc(rn, 'Spear') === hitAc(rpf, 'Spear') + 2, [hitAc(r5, 'Sword'), hitAc(rr, 'Sword'), hitAc(rn, 'Spear'), hitAc(rpf, 'Spear')].join());
+        const two2 = SR.compute(mk({ inv: [[BOW, 1, 'r'], [ARR, 2, 'r'], [ARR.replace('normal', 'silver').replace('(12)', '(single)'), 1, 'r+1']] })), bl = two2.weapons.filter(w => w.kind === 'missile');
+        check('(p) two Ready arrow stacks: one bow line per stack, each with its own Bonus in the label and its own key (DMG p.168 totals the bow and arrow plus)', bl.length === 2 && new Set(bl.map(w => w.key)).size === 2 && bl.filter(w => w.bonus === 1).length === 1 && bl.filter(w => w.bonus === 0).length === 1 && bl.every(w => /\(arrow/.test(w.name)), bl.map(w => w.name + ' ' + w.bonus).join('; '));
+        const tw = SR.compute(mk({ inv: [[SWD, 1, 'h'], [SWD, 1, 'h+2']] })), sw = tw.weapons;
+        check('(p) two copies of one weapon get distinct dice keys and show their own bonus in the name; each key rolls its own line', sw.length === 2 && sw[0].key !== sw[1].key && sw[1].name === 'Sword, long +2' && sw[0].name === 'Sword, long');
+        const ax = SR.compute(mk({ inv: [[HAX, 1, 'h+2']] })).weapons, axm = ax.filter(w => w.kind === 'missile')[0], axl = ax.filter(w => w.kind === 'melee')[0];
+        check('(p) thrown magic hand axe: hit bonus but no damage bonus (DMG p.168); swung it gets both', axm.hitMod === axm.abil + 2 && axm.dmgMod === 0 && axl.dmgMod === axl.strDmg + 2);
+    }
+    const sim = sandbox.SheetSimple.html(a, true);
+    check('(p) Simple view lists only the In hand and Ready weapons, has the "Change on the Equipment page" link and the roll button', /Sword, long/.test(sim) && /Bow, long/.test(sim) && !/>Spear</.test(sim) && !/>Dagger</.test(sim) && /Change on the Equipment page/.test(sim) && /data-act="wroll"/.test(sim) && /data-act="to-gear"/.test(sim));
+    check('(p) the strip lists In hand, Off hand, Ready, Armour, Shield, Rings, Other worn', a.onYou.map(x => x.label).join('|') === 'In hand|Off hand|Ready (missile)|Armour|Shield|Rings|Other worn' && a.onYou[0].items.length === 1 && a.onYou[2].items.length === 2);
+    check('(p) filter tags: weapon, armour, magic and gear rows are tagged', SR.gearTags([SWD, 1]).join() === 'weapons' && SR.gearTags(['Chain', 1]).join() === 'armour' && SR.gearTags(['Ring of Protection +1', 1, 0]).join() === 'magic' && SR.gearTags(["Rope, 50'", 1]).join() === 'gear' && SR.gearTags([SWD, 1, 'h+1']).join() === 'weapons,magic');
 }
 
 const html = ['index.html', 'guide.html', 'js/app.js', 'css/toolkit.css'].map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');

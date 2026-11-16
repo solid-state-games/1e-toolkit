@@ -15,7 +15,7 @@ const FORMAT = '1e-toolkit-sheet';
 const MAX_BYTES = 16000;          // OBR item metadata limit used as the hard cap
 const WARN_BYTES = 14000;
 const LIM = { name: 60, short: 80, text: 3000, gear: 120, known: 160, injuries: 16, profs: 16, langs: 12, cond: 6,
-    places: 10, place: 30, placeCoin: 99999, hench: 15, hname: 24, hrace: 10, hclass: 14, hshare: 14, hnote: 32, hire: 20, hirenote: 30 };
+    places: 10, place: 30, placeCoin: 99999, hench: 15, hname: 24, hrace: 10, hclass: 14, hshare: 14, hnote: 32, hire: 20, hirenote: 30, bonus: 5 };
 
 const SPELL_KEY = { 'Cleric': 'cleric', 'Druid': 'druid', 'Magic-User': 'mu', 'Illusionist': 'illusionist', 'Paladin': 'cleric',
     'Ranger (druidic)': 'druid', 'Ranger (magic-user)': 'mu' };
@@ -26,7 +26,7 @@ const ABIL = ['str', 'int', 'wis', 'dex', 'con', 'cha'];
 
 /* ---------- the stored sheet ---------- */
 function blank() {
-    return { v: 1, nm: '', pl: '', cmp: '', race: 'Human', sub: '', sex: 'm', cl: ['Fighter'], lv: [1], sc: [10, 10, 10, 10, 10, 10], ex: 0,
+    return { v: 2, nm: '', pl: '', cmp: '', race: 'Human', sub: '', sex: 'm', cl: ['Fighter'], lv: [1], sc: [10, 10, 10, 10, 10, 10], ex: 0,
         al: 'N', dt: '', og: '', rg: '', hp: 0, hm: 0, xp: 0, hl: [], pf: [], inv: [], co: [0, 0, 0, 0, 0], sk: {}, sm: {}, lg: [],
         d: { bd: '', ht: '', wt: '', hr: '', ey: '', sx: '', st: '', mk: '', mn: '', ap: '' }, ij: [], nt: '', ta: [0, 0, 0, 0, 0, 0, 0, 0],
         sj: [], cj: [], psi: { a: '', m: '', d: '', mj: '', mi: '' }, dn: '', lp: [], hn: [], hr: [], cs: {}, am: {} };
@@ -118,15 +118,17 @@ const cleanMods = m => {
     const a = lim.map((n, i) => clampInt(Array.isArray(m) ? m[i] : 0, 0, n, 0)); while (a.length && !a[a.length - 1]) a.pop(); return a;
 };
 
-// an inventory entry = [name, qty], [name, qty, lb], [name, qty, lb, ac]; plus an optional trailing string: "n" = in place n (1-based, no string = Carried),
-// or, for Carried items only, a worn mark: "w" worn, "wN" worn with N of a Defender's bonus held back for armour class, "x" not worn. No mark = the item's default
-// (ordinary armour and shields worn, magic items not worn), so old saves load unchanged.
+// an inventory entry = [name, qty], [name, qty, lb], [name, qty, lb, ac]; plus an optional trailing string: base + bonus.
+// base: "n" = in place n (1-based, no base = Carried); for Carried items only, a worn mark: "w" worn, "wN" worn with N of a Defender's bonus held back for armour class, "x" not worn
+// (no mark = the item's default: ordinary armour and shields worn, magic items not worn); or, on a price-list weapon or ammunition, a hand mark: "h" in hand, "o" off hand, "r" ready.
+// bonus (v0.9.0): "+1".."+5" or "-1".."-5", the magic plus on a weapon or ammunition (to hit and damage, DMG p.168). Old saves have neither, so they load unchanged.
+const FLAG_RE = /^(\d+|w\d?|x|[hor])?([+-][1-5])?$/;
 function entryParts(e) {
-    const last = e[e.length - 1], has = e.length > 2 && typeof last === 'string' && /^(\d+|w\d?|x)$/.test(last);
-    const place = has && /^\d+$/.test(last);
-    return { core: has ? e.slice(0, -1) : e, loc: place ? Number(last) : 0, flag: has && !place ? last : '' };
+    const last = e[e.length - 1], m = e.length > 2 && typeof last === 'string' && last ? FLAG_RE.exec(last) : null;
+    const place = m && m[1] && /^\d+$/.test(m[1]);
+    return { core: m ? e.slice(0, -1) : e, loc: place ? Number(m[1]) : 0, flag: m && m[1] && !place ? m[1] : '', bonus: m && m[2] ? Number(m[2]) : 0 };
 }
-
+const bonusTxt = b => b ? (b > 0 ? '+' : '') + b : '';
 // Make any input (loaded, imported, half-typed) into a legal, bounded sheet. Never throws.
 function sanitize(x) {
     const b = blank(), s = (x && typeof x === 'object') ? x : {};
@@ -152,10 +154,18 @@ function sanitize(x) {
         const p = entryParts(e), r = [str(p.core[0], LIM.name), clampInt(p.core[1], 1, 9999, 1)];
         if (p.core.length > 2 && p.core[2] !== null && p.core[2] !== undefined && p.core[2] !== '') { r.push(Math.max(0, Math.round(Number(p.core[2]) * 100) / 100 || 0)); }
         if (p.core.length > 3 && p.core[3] !== null && p.core[3] !== undefined && p.core[3] !== '') { r.push(clampInt(p.core[3], -10, 10, 10)); }
-        if (p.loc >= 1 && p.loc <= out.lp.length) r.push(String(p.loc));
-        else if (!p.loc && p.flag) { const f = cleanFlag(p.flag, r); if (f) r.push(f); }
+        const wi = weaponInfo(r), bn = wi ? clampInt(p.bonus, -LIM.bonus, LIM.bonus, 0) : 0;
+        if (p.loc >= 1 && p.loc <= out.lp.length) r.push(String(p.loc) + bonusTxt(bn));
+        else if (!p.loc) {
+            let f = '';
+            if (wi) f = (wi.hands.indexOf(p.flag) >= 0 && (p.flag !== 'o' || wi.canOff) ? p.flag : '') + bonusTxt(bn);
+            else if (/^(w\d?|x)$/.test(p.flag)) f = cleanFlag(p.flag, r);
+            if (f) r.push(f);
+        }
         return r;
     }).filter(e => e[0]);
+    tidyHands(out);
+    if (!(s.v >= 2)) { autoHands(out); tidyHands(out); } // one-time migration of v1 (v0.8 and older) sheets: what they were proficient in is now In hand
     out.co = COIN_NAMES.map((c, i) => clampInt(Array.isArray(s.co) ? s.co[i] : 0, 0, 99999999, 0));
     ['sk', 'sm'].forEach(k => {
         out[k] = {};
@@ -308,6 +318,66 @@ function wearState(e) {
     if (!info) return null;
     return { info, worn: p.flag ? p.flag !== 'x' : info.def, held: /^w\d$/.test(p.flag) ? Number(p.flag.slice(1)) : 0 };
 }
+/* ---------- weapons in hand (v0.9.0): which carried weapons are used, magic plus, proficiency, two weapons (DMG p.70) ---------- */
+// What an inventory row is as a weapon: null (not a price-list weapon or ammunition), else {base, ammo, melee, hands: marks it may hold, label, canOff}.
+// A weapon with a melee line in the combat tables is held ("In hand"); a missile weapon, thrown weapon or ammunition is "Ready". Second weapon: a dagger or hand axe only (DMG p.70).
+function weaponInfo(c) {
+    const base = eqIndex()[c[0]]; if (!base || base.kind === undefined) return null;
+    if (base.ammo) return { base, ammo: true, melee: false, hands: ['r'], label: 'Ready', canOff: false };
+    const rows = combatRows(base.n); if (!rows.length) return null;
+    const melee = rows.some(r => r.kind === 'melee');
+    return { base, ammo: false, melee, hands: melee ? ['h', 'o'] : ['r'], label: melee ? 'In hand' : 'Ready', canOff: melee && (base.kind === 'dagger' || base.kind === 'axe-hand') };
+}
+// rewrite row e's base mark (h/o/r/w/x or '') keeping its bonus
+function setBase(e, base) { const p = entryParts(e), f = base + bonusTxt(p.bonus); e.length = p.core.length; if (f) e.push(f); }
+// the one off hand weapon needs a melee weapon in the other hand (DMG p.70); otherwise it is just in hand
+function tidyHands(s) {
+    const rows = s.inv.map(e => ({ e, p: entryParts(e) })).filter(x => !x.p.loc);
+    const prime = rows.some(x => x.p.flag === 'h'); let seen = 0;
+    rows.filter(x => x.p.flag === 'o').forEach(x => { if (!prime || seen++) setBase(x.e, 'h'); });
+    return s;
+}
+// One-time migration (sheet v < 2, v0.9.0): v0.8 listed weapons by proficiency, so carried proficient weapons go In hand (Ready for missile weapons), carried ammunition that fits a Ready
+// launcher goes Ready, and a Quick Party magic weapon row ("Sword, Long +1") becomes the price-list weapon with a Bonus. Later saves are v2, so unticking sticks.
+function autoHands(s) {
+    const idx = eqIndex();
+    s.inv.forEach(e => {
+        const p = entryParts(e), m = /^(.+?) \+(\d)$/.exec(p.core[0]), b = m && QP_BASE[m[1]] ? idx[QP_BASE[m[1]]] : null;
+        if (b && b.kind !== undefined && b.ac === undefined && p.core.length <= 3 && !p.flag && !p.bonus) { const f = (p.loc ? String(p.loc) : '') + '+' + m[2]; e.length = 0; e.push(b.n, p.core[1], f); }
+    });
+    const marked = e => { const p = entryParts(e), wi = p.loc ? null : weaponInfo(p.core); return wi && !p.flag ? { e, wi } : null; };
+    s.inv.map(marked).filter(Boolean).filter(x => !x.wi.ammo && s.pf.indexOf(x.wi.base.n) >= 0).forEach(x => setBase(x.e, x.wi.hands[0]));
+    const kinds = s.inv.filter(e => entryParts(e).flag === 'r').map(e => weaponInfo(entryParts(e).core).base.kind);
+    s.inv.map(marked).filter(Boolean).filter(x => x.wi.ammo && kinds.indexOf(x.wi.base.ammo) >= 0).forEach(x => setBase(x.e, 'r'));
+    return s;
+}
+// st: '' none, 'h' in hand, 'o' off hand, 'r' ready. Only a carried weapon may take a mark that suits it.
+function setHand(sheet, i, st) {
+    const e = sheet.inv[i], p = e && entryParts(e), wi = p && !p.loc && weaponInfo(p.core);
+    if (!wi || (st && (wi.hands.indexOf(st) < 0 || (st === 'o' && !wi.canOff)))) return sheet;
+    if (st === 'o') sheet.inv.forEach(r => { if (entryParts(r).flag === 'o') setBase(r, 'h'); });
+    setBase(e, st); return tidyHands(sheet);
+}
+function setBonus(sheet, i, n) {
+    const e = sheet.inv[i], p = e && entryParts(e); if (!p || !weaponInfo(p.core)) return sheet;
+    const b = clampInt(n, -LIM.bonus, LIM.bonus, 0), f = (p.loc ? String(p.loc) : p.flag) + bonusTxt(b);
+    e.length = p.core.length; if (f) e.push(f); return sheet;
+}
+// DMG p.70 two weapons: primary -2, secondary -4; Dexterity above 15 lowers both (16: -1/-3, 17: 0/-2, 18: 0/-1, never a bonus); Dexterity below 6 adds the PHB p.11 reaction/attacking penalty to EACH.
+// Scores above 18 use the 18 row (the book stops there).
+function offHandPenalty(dex, reaction) {
+    const t = dex > 15 ? { 16: [-1, -3], 17: [0, -2] }[Math.min(18, dex)] || [0, -1] : [-2, -4], adj = dex < 6 ? Math.min(0, reaction || 0) : 0;
+    return { primary: t[0] + adj, secondary: t[1] + adj, page: 'DMG p.70' };
+}
+// Tags for the Equipment filter chips: weapons, armour, magic, gear (anything else)
+function gearTags(e) {
+    const p = entryParts(e), r = hydrateRow(e), info = protectiveInfo(p.core[0], p.core.length > 3 ? p.core[3] : undefined), t = [];
+    if (weaponInfo(p.core)) t.push('weapons');
+    if (r.shield || (r.ac !== undefined && r.ac !== null && !(info && info.magic && info.kind !== 'armor' && info.kind !== 'shield'))) t.push('armour');
+    if ((info && info.magic) || p.bonus || /[+-]\d/.test(p.core[0])) t.push('magic');
+    if (!t.length) t.push('gear');
+    return t;
+}
 function wearables(sheet) { const out = []; sheet.inv.forEach((e, i) => { const w = wearState(e); if (w) out.push(Object.assign({ i }, w)); }); return out; }
 // Mark row i worn or not (held = Defender bonus held back for armour class). Only exceptions to the item's default are stored.
 function setWorn(sheet, i, on, held) {
@@ -445,8 +515,9 @@ function moveItem(sheet, i, loc, qty) {
     const n = Math.min(p.core[1], Math.max(1, Math.floor(Number(qty)) || p.core[1]));
     const row = p.core.slice(); row[1] = n;
     if (n >= p.core[1]) sheet.inv.splice(i, 1); else e[1] = p.core[1] - n;
-    const twin = row.length === 2 ? sheet.inv.filter(r => { const q = entryParts(r); return q.core.length === 2 && q.core[0] === row[0] && q.loc === loc; })[0] : null;
-    if (twin) twin[1] += n; else sheet.inv.push(loc ? row.concat(String(loc)) : row);
+    const twin = row.length === 2 ? sheet.inv.filter(r => { const q = entryParts(r); return q.core.length === 2 && q.core[0] === row[0] && q.loc === loc && q.bonus === p.bonus && !/^[hor]$/.test(q.flag); })[0] : null;
+    const f = (loc ? String(loc) : '') + bonusTxt(p.bonus); // the magic plus travels with the item; a hand mark does not
+    if (twin) twin[1] += n; else sheet.inv.push(f ? row.concat(f) : row);
     return sheet;
 }
 // Remove place n: everything there moves to Carried, later places renumber.
@@ -455,7 +526,7 @@ function removePlace(sheet, n) {
     const coins = sheet.lp[n - 1].slice(1);
     for (let i = sheet.inv.length - 1; i >= 0; i--) if (locOf(sheet.inv[i]) === n) moveItem(sheet, i, 0);
     sheet.co = sheet.co.map((v, k) => v + coins[k]);
-    sheet.inv.forEach(e => { const l = locOf(e); if (l > n) e[e.length - 1] = String(l - 1); });
+    sheet.inv.forEach(e => { const l = locOf(e); if (l > n) e[e.length - 1] = String(l - 1) + bonusTxt(entryParts(e).bonus); });
     sheet.lp.splice(n - 1, 1);
     return sheet;
 }
@@ -550,7 +621,7 @@ function rollWeapon(view, w, rng) {
     rng = rng || Math.random;
     const die = n => 1 + Math.floor(rng() * n), dice = a => { if (!a) return null; let t = a[2] + (w.dmgMod || 0); for (let i = 0; i < a[0]; i++) t += die(a[1]); return Math.max(0, t); };
     const rows = (w.kind === 'missile' ? view.toHitRows.missile : view.toHitRows.melee), d20 = die(20), bonus = w.hitMod || 0, total = d20 + bonus;
-    let ac = null; for (let a = -10; a <= 10; a++) { if (d20 >= rows[a]) { ac = a; break; } }   // rows[a] already has the bonus taken off the matrix number
+    let ac = null; for (let a = -10; a <= 10; a++) { if (d20 + (w.hitExtra || 0) >= rows[a]) { ac = a; break; } }   // rows[a] has Str or Dex taken off; hitExtra (magic plus, non-proficiency, two weapons) is added to the die as the GM card does
     const hitTxt = ac === null ? 'misses even armour class 10' : ac === -10 ? 'hits any armour class' : 'hits armour class ' + ac + ' or higher (a worse armour)';
     const sm = dice(w.smD), lg = dice(w.lgD);
     return { name: w.name, d20: d20, bonus: bonus, total: total, ac: ac, sm: sm, lg: lg,
@@ -649,6 +720,51 @@ function retainers(sheet, d) {
     return { asn, rangerBlock: rangerBelow8, rangerUsed: rangerBelow8 && (sheet.hn.length + sheet.hr.length > 0), cmd, max, own: own && own > max ? own : 0, count: sheet.hn.length, over: sheet.hn.length > max, overOwn: own && own > max ? sheet.hn.length > own : sheet.hn.length > max, chaLoyalty: cha.loyalty, hn, hires, hnPay, hirePay, monthly: hnPay + hirePay };
 }
 
+/* ---------- what is in hand, the weapons table and the "On you" strip (DOM-free) ----------
+   The weapons table lists carried weapons marked In hand, Off hand or Ready, never what is proficient and never what is left at a place.
+   Hit adj = Strength (melee) or Dexterity (missile) + magic bonus + ready ammunition bonus + non-proficiency penalty (PHB p.37) + two-weapon penalty (DMG p.70). */
+function handView(s, d) {
+    const A = d.abilities, np = Number(d.weaponProf && d.weaponProf.nonProficiencyPenalty) || 0, held = [];
+    s.inv.forEach((e, i) => { const p = entryParts(e), wi = p.loc ? null : weaponInfo(p.core); if (wi && ['h', 'o', 'r'].indexOf(p.flag) >= 0) held.push({ i, p, wi, e }); });
+    const off = held.filter(x => x.p.flag === 'o')[0], two = off ? offHandPenalty(A.dex.score, A.dex.reaction) : null;
+    const shieldWorn = wearables(s).some(w => w.worn && w.info.kind === 'shield');
+    const weapons = [];
+    held.filter(x => !x.wi.ammo).forEach(x => {
+        const prof = s.pf.indexOf(x.wi.base.n) >= 0, ammos = held.filter(a => a.wi.ammo && a.wi.base.ammo === x.wi.base.kind);
+        combatRows(x.wi.base.n).forEach(r => {
+            const melee = r.kind === 'melee', thrownAxe = !melee && x.wi.base.kind === 'axe-hand';
+            // a launcher with two Ready ammunition stacks gets one line per stack (each with its own Bonus); DMG p.168: with magic arrows the bonus is the total of the bow's and the arrows'
+            (r.kind === 'missile' && x.wi.base.ammo === undefined && ammos.length ? ammos : [null]).forEach(am => {
+                const L = weaponLine(r, A), ab = am ? am.p.bonus : 0, tw = melee && two ? (x === off ? two.secondary : two.primary) : 0, pn = prof ? 0 : np, own = x.p.bonus;
+                L.abil = L.hitMod; L.strDmg = L.dmgMod; L.bonus = own + ab; L.prof = prof; L.npen = pn; L.twoPen = tw; L.hand = x.p.flag; L.i = x.i;
+                L.key = x.i + '|' + r.kind + (am ? '|' + am.i : '');
+                L.name = r.name + (own ? ' ' + bonusTxt(own) : '') + (am && ammos.length > 1 ? ' (' + am.p.core[0].replace(/,.*$| \(.*$/, '').toLowerCase() + ' ' + (ab ? bonusTxt(ab) : '+0') + ')' : '');
+                L.hitExtra = L.bonus + pn + tw; L.hitMod += L.hitExtra; L.dmgMod += thrownAxe ? ab : L.bonus; // DMG p.168: a thrown hand axe gets the hit bonus but no damage bonus
+                weapons.push(L);
+            });
+        });
+    });
+    const nm = x => x.p.core[0].replace(/ and scabbard$| & scabbard$/i, '') + (x.p.bonus ? ' ' + bonusTxt(x.p.bonus) : '') + (x.p.core[1] > 1 ? ' x' + x.p.core[1] : '');
+    const slot = (label, key, list) => ({ key, label, items: list.map(x => ({ i: x.i, name: x.name || nm(x), prof: x.prof })) });
+    const worn = wearables(s).filter(w => w.worn), of = f => worn.filter(w => f(w.info.kind)).map(w => ({ i: w.i, name: entryParts(s.inv[w.i]).core[0] }));
+    const profOf = x => !x.wi.ammo && s.pf.indexOf(x.wi.base.n) >= 0;
+    const onYou = [slot('In hand', 'hand', held.filter(x => x.p.flag === 'h').map(x => Object.assign(x, { prof: profOf(x) }))),
+        slot('Off hand', 'off', held.filter(x => x.p.flag === 'o').map(x => Object.assign(x, { prof: profOf(x) }))),
+        slot('Ready (missile)', 'ready', held.filter(x => x.p.flag === 'r').map(x => Object.assign(x, { prof: profOf(x) }))),
+        slot('Armour', 'armour', of(k => k === 'armor')), slot('Shield', 'shield', of(k => k === 'shield')), slot('Rings', 'rings', of(k => k === 'ring')),
+        slot('Other worn', 'other', of(k => ['armor', 'shield', 'ring'].indexOf(k) < 0))];
+    return { weapons, onYou, twoWeapons: two ? { off: off.p.core[0].replace(/ and scabbard$| & scabbard$/i, ''), primary: two.primary, secondary: two.secondary, page: two.page, shield: shieldWorn } : null };
+}
+
+/* ---------- token name from the sheet (v0.9.0) ----------
+   "<First name> (AC <n>)" (first word of the character name, TB 2026-11-16), the AC from compute(). A blank character name leaves the token's name alone (returns ''). plainName() strips the suffix again for lists and labels. */
+const AC_SUFFIX = /\s*\(AC (-?\d+|\?)\)\s*$/;
+function tokenName(sheet) {
+    const s = sanitize(sheet), nm = s.nm.trim().split(/\s+/)[0]; if (!nm) return '';
+    const v = compute(s); return nm + ' (AC ' + (v.d ? v.d.ac : '?') + ')';
+}
+function plainName(n) { return String(n === undefined || n === null ? '' : n).replace(AC_SUFFIX, ''); }
+
 /* ---------- the view model: everything the page shows, derived ---------- */
 function compute(sheet) {
     const s = sanitize(sheet), char = toChar(s), out = { sheet: s, char: char, errors: [], warns: [] };
@@ -670,8 +786,7 @@ function compute(sheet) {
         return { cls: c, level: lv, next: Rules.xpForLevel(c, lv + 1), at: Rules.xpForLevel(c, lv), share: share, limit: d.levelLimits[c], bonus: d.xpBonus[c],
             byXp: Rules.levelForXP(c, share), title: (Rules.CLASSES[c].titles || [])[Math.min(lv, 8) - 1] || '' };
     });
-    out.weapons = [];
-    s.pf.forEach(n => combatRows(n).forEach(r => out.weapons.push(weaponLine(r, A))));
+    Object.assign(out, handView(s, d));
     out.toHitRows = { melee: {}, missile: {} };
     for (let ac = 10; ac >= -10; ac--) {
         out.toHitRows.melee[ac] = d.attack[ac] - A.str.hit;
@@ -719,7 +834,8 @@ function qpInventory(equipment) {
         const m = /^(.+?) \+(\d)$/.exec(item), base = m && QP_BASE[m[1]] ? idx[QP_BASE[m[1]]] : null;
         if (protectiveInfo(item)) inv.push([item, 1, protectiveInfo(item).w || 0]);
         else if (base && base.ac !== undefined && base.ac !== null) inv.push([item, 1, base.w || 0, base.shield ? base.ac : base.ac - Number(m[2])]);
-        else if (base) { inv.push([item, 1, base.w || 0]); if (base.kind) weapons.push(base.n); }
+        else if (base && base.kind !== undefined) { inv.push([base.n, 1, '+' + m[2]]); weapons.push(base.n); } // a magic weapon is the price-list weapon with a Bonus, so it can be held
+        else if (base) inv.push([item, 1, base.w || 0]);
         else inv.push([item, 1, 0]);
     });
     return { inv, weapons, magic };
@@ -753,6 +869,7 @@ function fromQuickParty(pc, tokenName, how) {
     s.nt = fitNotes([how || 'Made by the Random PC button (Quick Party generator, DMG Appendix P).', pc.titles ? 'Title: ' + pc.titles + '.' : '',
         'Generator armour class: ' + pc.ac + ' (this sheet works out its own from what is worn: see Combat, armour class).',
         it.magic.length ? 'Magic and other items, in full (armour, shields, rings, bracers and cloaks are worked out on the Combat page; the worn marks are set to the best armour class): ' + it.magic.join('; ') + '.' : '', sp.left.length ? 'Spells the sheet could not place: ' + sp.left.join(' ') : '']);
+    s.v = 1; // so the one-time migration (autoHands) runs on new characters too
     const out = sanitize(s);
     return bestWear(out);
 }
@@ -799,6 +916,7 @@ function fromCreator(c, tokenName) {
     (c.spells || []).forEach(e => { if (!e || !e.s || !Rules.CLASSES[e.cls]) return; const k = e.cls; if (!s.sk[k]) s.sk[k] = [[]]; s.sk[k][0].push(e.s); });
     s.nt = fitNotes(['Made with the Character Creator wizard' + (c.version ? ' v' + c.version : '') + '.', c.secondarySkill ? 'Secondary skill: ' + c.secondarySkill + '.' : '',
         c.chaRolled && c.chaRolled !== sc.cha ? 'Charisma as rolled: ' + c.chaRolled + ' (final ' + sc.cha + ').' : '', (c.spells || []).length ? 'Starting spell book is under Spells, Known. Nothing is memorised yet.' : '']);
+    s.v = 1; // new characters get the one-time hand migration too
     return sanitize(s);
 }
 // One line for the Random PC preview: race, class, level, key scores, hp and AC.
@@ -809,7 +927,7 @@ function previewLine(sheet) {
 }
 
 const api = { rollWeapon, CAST_BITS, VIEW_KEY, ammoLines, adjustAmmo, isCast, toggleCast, restSpells, filterMem, defaultSheetView, NS, KEY, OWNER_KEY, FORMAT, MAX_BYTES, WARN_BYTES, LIM, SPELL_KEY, COIN_NAMES, COIN_GP, ABIL, RACE_TRAITS,
-    blank, sanitize, pack, randomPC, protectiveInfo, wearState, wearables, setWorn, bestWear, acBuild, saveTargets, SAVE_NAMES, MAGIC_AC_PICK, WEAR_TEXT, WEAR_PAGE, SOLDIERS, EXPERTS, SOLDIER_PAY_PAGE, SERJEANT_MULT, LOY_BASE, LOY_CATS, LOY_ALIGN, LOY_ALIGN_ROWS, LOY_SPECIAL, LOY_PENALTY, LOY_BONUS, LOY_SITUATION, LOY_BANDS, LOY_CHECKS, HENCH_MAINT, H, blankHench,
+    blank, sanitize, pack, weaponInfo, setHand, setBonus, offHandPenalty, gearTags, handView, tokenName, plainName, bonusTxt, AC_SUFFIX, randomPC, protectiveInfo, wearState, wearables, setWorn, bestWear, acBuild, saveTargets, SAVE_NAMES, MAGIC_AC_PICK, WEAR_TEXT, WEAR_PAGE, SOLDIERS, EXPERTS, SOLDIER_PAY_PAGE, SERJEANT_MULT, LOY_BASE, LOY_CATS, LOY_ALIGN, LOY_ALIGN_ROWS, LOY_SPECIAL, LOY_PENALTY, LOY_BONUS, LOY_SITUATION, LOY_BANDS, LOY_CHECKS, HENCH_MAINT, H, blankHench,
     command, directCap, assassinRule, MERC_CAP_BY_CLASS, MERC_CAP_OTHER, entryParts, locOf, hydrateRow, moveItem, removePlace, placeCounts, coinsAt, setCoinsAt, purseGp, payFrom, loyalty, loyaltyCheck, bandOf, soldierCost, expertCost, hireLine, retainers, bytes, sizeOf, exportText, parseImport, toChar, hydrate, combatRows, proficiencyChoices, weaponLine, movementTable, compute, coinGp, coinPieces, fromCreator, fromQuickParty, previewLine, coinsFromCP, qpSpells };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 root.SheetRules = api;

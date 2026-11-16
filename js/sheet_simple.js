@@ -29,6 +29,16 @@ function carried(sheet) {
 
 function saveCell(t, bonus) { return t.eff === t.base ? String(t.base) : '<b title="Table figure ' + t.base + ', lowered by ' + bonus + ' for worn magic items">' + t.eff + '</b> <small class="muted">(' + t.base + ')</small>'; }
 
+// a dice button beside each weapon: rolls d20 to hit and the damage (sheet_ui.js handles data-act="wroll"); key = name and kind, so a dagger's melee and thrown lines roll apart
+const wdice = x => '<button type="button" class="x wdice" data-act="wroll" data-n="' + esc(x.key) + '" title="Roll to hit and damage" aria-label="Roll ' + esc(x.name) + '"><i class="ic ic-dice" aria-hidden="true"></i></button> ';
+// after the weapon name: off hand, missile, P for a weapon of proficiency (PHB p.37) or "not proficient" with its penalty
+const marks = x => (x.hand === 'o' && x.kind === 'melee' ? ' (off hand)' : '') + (x.kind === 'missile' ? ' (missile)' : '') +
+    (x.prof ? ' <b class="pmark" title="Weapon of proficiency (PHB p.37)">P</b>' : ' <i class="np" title="Not a weapon of proficiency: ' + sg(x.npen) + ' to hit (PHB p.37)">not proficient ' + sg(x.npen) + '</i>');
+const hitTip = x => (x.kind === 'missile' ? 'Dexterity ' : 'Strength ') + sg(x.abil) + (x.bonus ? ', magic ' + sg(x.bonus) + ' (DMG p.168)' : '') + (x.npen ? ', not proficient ' + sg(x.npen) + ' (PHB p.37)' : '') + (x.twoPen ? ', two weapons ' + sg(x.twoPen) + ' (DMG p.70)' : '');
+// two weapons note under the table (DMG p.70), with the shield warning
+const twoNote = view => { const t = view.twoWeapons; if (!t) return ''; return '<p class="hint warnline">Two weapons (DMG p.70): primary weapon ' + sg(t.primary) + ' to hit, ' + esc(t.off) + ' off hand ' + sg(t.secondary) + '. The second weapon must be a dagger or hand axe and is not a shield or parrying device.' +
+    (t.shield ? ' <b>A shield is also worn: two weapons are "possibly discarding the option of using a shield" (DMG p.70).</b>' : '') + '</p>'; };
+
 function html(view, canWrite) {
     const s = view.sheet, d = view.d, A = d.abilities, dis = canWrite ? '' : ' disabled';
     let h = '<div class="simple dense">';
@@ -51,12 +61,12 @@ function html(view, canWrite) {
     h += '<div class="two sv-hit"><section class="dbox"><h3>Saving throws</h3><table class="grid saves"><tr>' + names.map(n => '<th>' + n[1] + '</th>').join('') + '</tr><tr>' + names.map(n => '<td>' + saveCell(view.saves[n[0]], view.ac.save) + '</td>').join('') + '</tr></table></section>' +
         '<section class="dbox"><h3>To hit by armour class</h3><div class="scroll"><table class="grid tohit simplehit"><tr><th>AC</th>' + acs.map(a => '<th>' + a + '</th>').join('') + '</tr>' +
         '<tr><th>Melee</th>' + acs.map(a => '<td>' + view.toHitRows.melee[a] + '</td>').join('') + '</tr><tr><th>Missile</th>' + acs.map(a => '<td>' + view.toHitRows.missile[a] + '</td>').join('') + '</tr></table></div></section></div>';
-    // a dice button beside each weapon: rolls d20 to hit and the damage (sheet_ui.js handles data-act="wroll")
-    const wdice = x => '<button type="button" class="x wdice" data-act="wroll" data-n="' + esc(x.name) + '" title="Roll to hit and damage" aria-label="Roll ' + esc(x.name) + '"><i class="ic ic-dice" aria-hidden="true"></i></button> ';
-    // weapons and ammunition side by side (a section with nothing in it is left out)
-    let w = '';
-    if (view.weapons.length) w = '<section class="dbox"><h3>Weapons</h3><div class="scroll"><table class="grid"><tr><th>Weapon</th><th>To hit adj</th><th>Damage S-M</th><th>Damage L</th><th>Speed</th></tr>' + view.weapons.map(x =>
-        '<tr><td>' + wdice(x) + esc(x.name) + (x.kind === 'missile' ? ' (missile)' : '') + '</td><td>' + sg(x.hitMod) + '</td><td>' + esc(x.sm || '-') + (x.dmgMod ? ' ' + sg(x.dmgMod) : '') + '</td><td>' + esc(x.lg || '-') + (x.dmgMod ? ' ' + sg(x.dmgMod) : '') + '</td><td>' + esc(x.spd === undefined || x.spd === '' || x.spd === null ? '-' : x.spd) + '</td></tr>').join('') + '</table></div><p class="wres" id="wres">' + esc((window.SheetRoll && window.SheetRoll.last()) || '') + '</p></section>';
+    // weapons: only what is carried and In hand, Off hand or Ready (set on the Equipment page of the Full sheet; v0.9.0). Proficiency is not shown in Simple except the P mark.
+    let w = '<section class="dbox"><h3>Weapons in hand</h3>';
+    if (view.weapons.length) w += '<div class="scroll"><table class="grid"><tr><th>Weapon</th><th>To hit adj</th><th>Damage S-M</th><th>Damage L</th><th>Speed</th></tr>' + view.weapons.map(x =>
+        '<tr><td>' + wdice(x) + esc(x.name) + marks(x) + '</td><td title="' + esc(hitTip(x)) + '">' + sg(x.hitMod) + '</td><td>' + esc(x.sm || '-') + (x.dmgMod ? ' ' + sg(x.dmgMod) : '') + '</td><td>' + esc(x.lg || '-') + (x.dmgMod ? ' ' + sg(x.dmgMod) : '') + '</td><td>' + esc(x.spd === undefined || x.spd === '' || x.spd === null ? '-' : x.spd) + '</td></tr>').join('') + '</table></div>' + twoNote(view) + '<p class="wres" id="wres">' + esc(window.SheetRoll ? window.SheetRoll.last() : '') + '</p>';
+    else w += '<p class="muted">Nothing in hand.</p>';
+    w += '<p class="hint dhint"><button type="button" class="linkbtn" data-act="to-gear">Change on the Equipment page</button> Weapon damage PHB p.37, speed PHB p.38.</p></section>';
     const am = SR.ammoLines(s);
     let a = '';
     if (am.length) a = '<section class="dbox"><h3>Ammunition</h3><ul class="ammo">' + am.map((x, i) => '<li><span class="an">' + esc(x.name) + '</span>' +
@@ -91,5 +101,5 @@ function html(view, canWrite) {
     h += '<p class="hint dhint">' + (canWrite ? 'Hit points, spells cast and ammunition can be changed here. ' : 'Read only. ') + '<button type="button" class="btn small" data-act="vw" data-v="full">Full sheet</button> edits the rest.</p>';
     return h + '</div>';
 }
-root.SheetSimple = { html, carried };
+root.SheetSimple = { html, carried, wdice, marks, hitTip, twoNote };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

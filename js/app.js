@@ -121,7 +121,7 @@ const Hub = (function () {
         if (!withSheet.length) h += '<p class="muted">No characters yet. Pick a token in New Character to start its sheet' + (TK.role === "GM" ? "." : ", or ask the GM to assign one to you.") + "</p>";
         h += '<ul class="charlist">' + withSheet.map(function (it) {
             const sh = (it.metadata || {})[SheetRules.KEY], has = !!sh;
-            let line = '<li data-id="' + esc(it.id) + '"><div class="cname"><b>' + esc(it.name || "Unnamed token") + "</b>";
+            let line = '<li data-id="' + esc(it.id) + '"><div class="cname"><b>' + esc(SheetRules.plainName(it.name) || "Unnamed token") + "</b>";
             if (has) line += '<span class="csub">' + esc(sh.nm || "") + " " + esc((sh.cl || []).join("/")) + " " + esc((sh.lv || []).join("/")) + "</span>"; else line += '<span class="csub muted">no sheet yet</span>';
             const own = ownerName(it); if (own) line += '<span class="csub">assigned to ' + esc(own) + "</span>";
             line += '</div><div class="cbtns"><button type="button" class="btn" data-act="open">' + (has ? "Open" : "Create") + "</button>";
@@ -158,7 +158,7 @@ const Hub = (function () {
         try {
             const sheet = SheetRules.parseImport(await f.text()), id = importFor.id;
             if (SheetRules.sizeOf(sheet) >= SheetRules.MAX_BYTES) throw new Error("That sheet is too large for token metadata.");
-            await TK.OBR.scene.items.updateItems([id], function (d) { d[0].metadata[SheetRules.KEY] = sheet; });
+            const tn = SheetRules.tokenName(sheet); await TK.OBR.scene.items.updateItems([id], function (d) { d[0].metadata[SheetRules.KEY] = sheet; if (tn) { d[0].name = tn; if (d[0].text && d[0].text.plainText) d[0].text.plainText = tn; } });
             say("Imported " + (sheet.nm || "sheet") + ".", "SUCCESS"); await refreshItems();
         } catch (err) { say(err.message, "ERROR"); }
     }

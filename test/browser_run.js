@@ -49,10 +49,7 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
     await p.click('[data-act="inj-add"]'); await p.sleep(100); await set('[data-f="ij.0.0"]', 'Scar, left forearm'); await set('[data-f="ij.0.1"]', '3 Coldeven'); await set('[data-f="ij.0.2"]', 'Gnoll axe');
     await set('[data-f="hl.0"]', '9'); await set('[data-f="hl.1"]', '7');
     const combat = await p.ev('document.querySelector(".page").innerText');
-    check('tab 2 shows weapons, to-hit row, adjustments, HP, scarring', /Sword, long/.test(combat) && /To hit by armour class/i.test(combat) && /Hit points and hit dice/i.test(combat) && /Scarring and maiming/i.test(combat) && (await state(p)).sheet.ij[0][0] === 'Scar, left forearm' && (await state(p)).sheet.hl[1] === 7 && /Weapons: damage/i.test(combat));
-    check('tab 2: weapon table has 9 adjustment columns', await p.ev('document.querySelectorAll(".wtab tr:nth-child(2) td").length') >= 14);
-    await p.shot(path.join(OUT, 'sheet-2-combat.png'), { full: true });
-    await shotBoth(p, 'sheet-combat-page', { full: true });
+    check('tab 2 shows the to-hit row, adjustments, HP, scarring, and says nothing is in hand yet', /Nothing is in hand/.test(combat) && /To hit by armour class/i.test(combat) && /Hit points and hit dice/i.test(combat) && /Scarring and maiming/i.test(combat) && (await state(p)).sheet.ij[0][0] === 'Scar, left forearm' && (await state(p)).sheet.hl[1] === 7 && /Weapons in hand: damage/i.test(combat));
 
     // tab 3 skills and look
     await p.click('[data-act="tab"][data-i="2"]'); await p.sleep(150);
@@ -101,6 +98,68 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
     await p.ev('document.getElementById("pl-new").value="Stronghold vault"'); await p.click('[data-act="pl-add"]'); await p.sleep(150);
     st = await state(p); await set('[data-act="mv"][data-i="' + st.sheet.inv.findIndex(e => e[0] === 'Chain') + '"]', '1');
     await set('[data-f="lp.0.2"]', '600');
+
+    // v0.9.0: In hand, Bonus, Off hand, On you strip, filters, token name
+    st = await state(p);
+    const ix = n => st.sheet.inv.findIndex(e => e[0] === n), tick = async (act, n) => { await p.click('[data-act="' + act + '"][data-i="' + ix(n) + '"]'); await p.sleep(250); st = await state(p); };
+    await p.click('[data-act="tab"][data-i="1"]'); await p.sleep(150);
+    check('combat: with nothing In hand there is no weapons table, but the link to the Equipment page is there', await p.ev('!document.querySelector(".wtab")&&!!document.querySelector("[data-act=to-gear]")'));
+    await p.click('[data-act="to-gear"]'); await p.sleep(200);
+    check('combat: "Change on the Equipment page" switches to the Equipment tab', await p.ev('document.querySelector(".sheettabs .on").textContent') === '4. Equipment' && await p.ev('!!document.querySelector(".onyou")'));
+    check('equipment: On you strip has In hand, Off hand, Ready, Armour, Shield, Rings, Other worn, AC and move on one line', await p.ev('Array.from(document.querySelectorAll(".onyou .slot b:first-child")).map(b=>b.textContent).join("|")') === 'In hand|Off hand|Ready (missile)|Armour|Shield|Rings|Other worn' && /AC \d+\s+Move/.test(await p.ev('document.querySelector(".sum").innerText')));
+    check('equipment: items left at the inn have no In hand, Ready or Worn toggles', await p.ev('(function(){var r=document.querySelector("tr.away");return !!r&&!r.querySelector("input[type=checkbox]")})()'));
+    await tick('hand', 'Sword, Long & scabbard'); await tick('hand', 'Bow, long'); await tick('hand', 'Arrow, normal (12)');
+    check('In hand on a sword, Ready on the bow and arrows are stored on the gear rows', st.sheet.inv[ix('Sword, Long & scabbard')].slice(-1)[0] === 'h' && st.sheet.inv[ix('Bow, long')].slice(-1)[0] === 'r' && st.sheet.inv[ix('Arrow, normal (12)')].slice(-1)[0] === 'r');
+    check('equipment: the sword line carries a bold P (weapon of proficiency, PHB p.37)', await p.ev('!!document.querySelector("#gr-' + ix('Sword, Long & scabbard') + ' .pmark")'));
+    await p.click('[data-act="tab"][data-i="1"]'); await p.sleep(200);
+    const wrows = await p.ev('Array.from(document.querySelectorAll(".wtab tr")).slice(1).map(r=>r.cells[0].innerText.replace(/\\s+/g," ").trim()).join("|")');
+    check('combat: toggling In hand moved the sword and the bow into the weapons table (and nothing else)', /Sword, long/.test(wrows) && /Bow, long/.test(wrows) && !/Dagger|Rope|Chain/.test(wrows), wrows);
+    check('combat: weapons table keeps 9 adjustment columns and a dice button per row', await p.ev('document.querySelectorAll(".wtab tr:nth-child(2) td").length') >= 14 && await p.ev('document.querySelectorAll(".wtab .wdice").length') >= 2);
+    const hit0 = await p.ev('SheetUI._state().view.weapons.filter(function(w){return w.name.indexOf("Sword, long")===0&&w.kind==="melee"})[0].hitMod');
+    await p.click('[data-act="to-gear"]'); await p.sleep(200);
+    await set('[data-act="bonus"][data-i="' + ix('Sword, Long & scabbard') + '"]', '2'); await sleepSt(); st = await state(p);
+    const hit2 = await p.ev('SheetUI._state().view.weapons.filter(function(w){return w.name.indexOf("Sword, long")===0&&w.kind==="melee"})[0].hitMod'), dm2 = await p.ev('SheetUI._state().view.weapons.filter(function(w){return w.name.indexOf("Sword, long")===0&&w.kind==="melee"})[0].dmgMod');
+    check('Bonus +2 on the sword is stored ("h+2") and adds to hit adj and damage', st.sheet.inv[ix('Sword, Long & scabbard')].slice(-1)[0] === 'h+2' && hit2 === hit0 + 2 && dm2 >= 2);
+    async function sleepSt() { await p.sleep(250); }
+    // filters and search (screen only)
+    await p.click('[data-gf="weapons"]'); await p.sleep(100);
+    const vis = () => p.ev('Array.from(document.querySelectorAll("table.gear tr[data-tags]:not([hidden])")).map(r=>r.cells[0].innerText.trim())');
+    let vv = await vis();
+    check('filter chip Weapons shows only weapon lines (sword, bow, arrows, dagger); counts are on the chips', vv.length === 4 && vv.every(x => /Sword|Bow|Arrow|Dagger/.test(x)) && /Weapons\s*4/.test(await p.ev('document.querySelector("[data-gf=weapons]").innerText')), JSON.stringify(vv) + ' ' + await p.ev('document.querySelector("[data-gf=weapons]").innerText'));
+    await p.click('[data-gf="all"]'); await p.ev('(function(){var e=document.getElementById("gsearch");e.value="rope";e.dispatchEvent(new Event("input",{bubbles:true}))})()'); await p.sleep(100);
+    vv = await vis();
+    check('search "rope" leaves the rope line; clearing it brings everything back; filter state is never stored', vv.length === 1 && /Rope/.test(vv[0]) && !/gsearch|gFilter/.test(JSON.stringify((await state(p)).sheet)) && await p.ev('(function(){var e=document.getElementById("gsearch");e.value="";e.dispatchEvent(new Event("input",{bubbles:true}));return document.querySelectorAll("table.gear tr[data-tags]:not([hidden])").length})()') >= 10);
+    await p.click('[data-slot="hand"]'); await p.sleep(150);
+    check('On you: clicking the In hand slot scrolls to and flags the sword line', await p.ev('document.getElementById("gr-' + ix('Sword, Long & scabbard') + '").classList.contains("flash")'));
+    // two weapons: dagger off hand (DMG p.70), Dex 17: primary 0, secondary -2
+    await tick('hand', 'Dagger and scabbard');
+    check('Off hand toggle appears on the dagger while another melee weapon is in hand, and not on the sword or the rope', await p.ev('!!document.querySelector("[data-act=off][data-i=\\"' + ix('Dagger and scabbard') + '\\"]")&&!document.querySelector("[data-act=off][data-i=\\"' + ix('Sword, Long & scabbard') + '\\"]")&&document.querySelectorAll("[data-act=off]").length===1'));
+    await tick('off', 'Dagger and scabbard');
+    check('Off hand stored as "o" on the dagger', st.sheet.inv[ix('Dagger and scabbard')].slice(-1)[0] === 'o');
+    await p.click('[data-act="tab"][data-i="1"]'); await p.sleep(200);
+    const two = await p.ev('document.querySelector(".page").innerText');
+    check('combat: off hand shows both penalties with the DMG p.70 hint and warns about the worn shield', /Two weapons \(DMG p\.70\)/.test(two) && /primary weapon [+-]?0 to hit/.test(two) && /off hand -2/.test(two) && /off hand\)/.test(two.replace(/\s+/g,' ')) && /discarding the option of using a shield/.test(two), two.slice(two.indexOf('Two weapons'), two.indexOf('Two weapons') + 200));
+    await p.shot(path.join(OUT, 'gear-2-combat-weapons.png'), { full: true });
+    await p.click('[data-act="to-gear"]'); await p.sleep(200);
+    await p.ev('document.getElementById("gear-sel").value="Spear"'); await p.click('[data-act="gear-add"]'); await p.sleep(200); st = await state(p);
+    await tick('hand', 'Spear');
+    check('a non-proficient weapon in hand shows "not proficient" and its penalty on the line', /not proficient -2/.test(await p.ev('document.getElementById("gr-' + ix('Spear') + '").innerText')));
+    await p.ev('document.documentElement.dataset.theme="light"');
+    await p.shot(path.join(OUT, 'gear-1-equipment.png'), { full: true });
+    await p.ev('document.documentElement.dataset.theme="dark"'); await p.shot(path.join(OUT, 'gear-1-equipment-dark.png'), { full: true }); await p.ev('document.documentElement.dataset.theme="light"');
+    await p.click('[data-act="vw"][data-v="simple"]'); await p.sleep(300);
+    const simTxt = await p.ev('document.querySelector(".simple").innerText');
+    check('Simple view: weapons section lists only what is in hand, with the Equipment link; no proficiency chip list', /Weapons in hand/i.test(simTxt) && /Sword, long/.test(simTxt) && /Change on the Equipment page/.test(simTxt) && !/Weapons of proficiency/i.test(simTxt), simTxt.slice(0, 1500).replace(/\s+/g, ' '));
+    await p.shot(path.join(OUT, 'gear-3-simple.png'), { full: true });
+    await p.click('[data-act="to-gear"]'); await p.sleep(300);
+    check('Simple view: the link opens the Full sheet on the Equipment tab', await p.ev('document.querySelector(".sheettabs .on").textContent') === '4. Equipment');
+    // token name from the sheet
+    await p.sleep(700);
+    const tok = await p.ev('(function(){var s=JSON.parse(localStorage.getItem("toolkit-dev-scene"));var t=s.items.filter(function(i){return i.id==="t1"})[0];return t.name})()'), acv = await p.ev('SheetUI._state().view.d.ac');
+    check('token name follows the sheet after save: first name and derived AC, "Aldric (AC ' + acv + ')"', tok === 'Aldric (AC ' + acv + ')', tok);
+    await p.click('[data-act="tab"][data-i="3"]'); await p.sleep(100);
+    await tick('hand', 'Spear'); await tick('off', 'Dagger and scabbard'); await tick('hand', 'Dagger and scabbard'); await set('[data-act="bonus"][data-i="' + ix('Sword, Long & scabbard') + '"]', '0'); await p.sleep(300);
+    await p.ev('(function(){var s=JSON.parse(localStorage.getItem("toolkit-dev-scene"));s.items.filter(function(i){return i.id==="t1"})[0].name="Aldric (your token)";localStorage.setItem("toolkit-dev-scene",JSON.stringify(s))})()');   // put the dev token back
 
     // tab 5 spells
     await p.click('[data-act="tab"][data-i="4"]'); await p.sleep(150);
@@ -326,7 +385,7 @@ const state = p => p.ev('JSON.stringify((function(){var s=SheetUI._state();retur
         await g.click('[data-tab="com"]'); await g.sleep(300); await g.ev('window.confirm=function(){return true}'); await g.click('[data-act="end"]'); await g.sleep(500);
         ks = await keys(); check('combat 7: End combat clears the combat key', ks.length === 0, JSON.stringify(ks));
         // tokens: Aldric (sheet, hp 20), Brenna with a fighter sheet (hp 15), three goblins by name (MM exact name, trailing number ignored)
-        await g.ev('window.OBRX.scene.items.updateItems(["t3"],function(d){d[0].name="Goblin 1"});window.OBRX.scene.items.updateItems(["t1"],function(d){var s=d[0].metadata["' + NSK + '/sheet"];s.hp=20;s.hm=20});window.OBRX.scene.items.updateItems(["t2"],function(d){var s=SheetRules.blank();Object.assign(s,{nm:"Brenna",race:"Human",cl:["Fighter"],lv:[7],sc:[16,10,10,14,15,12],pf:["Sword, Long & scabbard","Bow, long"],inv:[["Chain",1]],hp:15,hm:15});d[0].metadata["' + NSK + '/sheet"]=s});window.OBRX._dev.addToken("Goblin 2");window.OBRX._dev.addToken("Goblin 3")'); await g.sleep(600);
+        await g.ev('window.OBRX.scene.items.updateItems(["t3"],function(d){d[0].name="Goblin 1"});window.OBRX.scene.items.updateItems(["t1"],function(d){var s=d[0].metadata["' + NSK + '/sheet"];s.hp=20;s.hm=20});window.OBRX.scene.items.updateItems(["t2"],function(d){var s=SheetRules.blank();Object.assign(s,{nm:"Brenna",race:"Human",cl:["Fighter"],lv:[7],sc:[16,10,10,14,15,12],pf:["Sword, Long & scabbard","Bow, long"],inv:[["Chain",1],["Sword, Long & scabbard",1,"h"],["Bow, long",1,"r"]],hp:15,hm:15});d[0].metadata["' + NSK + '/sheet"]=s});window.OBRX._dev.addToken("Goblin 2");window.OBRX._dev.addToken("Goblin 3")'); await g.sleep(600);
         const pp = await open('dev=player', 560, 700); await pp.sleep(500); await g.send('Page.bringToFront');
         check('combat 7: players see nothing of combat: no Combat tab, no combat pane, no number labels', await pp.ev('Array.from(document.querySelectorAll(".tabs button")).map(function(b){return b.textContent}).join("|")') === 'Characters|Guide' && await pp.ev('!document.getElementById("com")&&!document.getElementById("cbt")&&!document.getElementById("dev-map")&&!document.getElementById("dev-pop")'));
         await g.click('[data-tab="com"]'); await g.click('[data-top="run"]'); await g.sleep(300);
