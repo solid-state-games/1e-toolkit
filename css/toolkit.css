@@ -312,3 +312,14 @@ button.gear:hover,.cmcard .ibtn:hover{background:var(--hl)}
 .cmhp{font-size:12px}.cmhp td,.cmhp th{padding:var(--s1)}.cmhp .cmhpin{width:5.2em;font-size:12px}.cmhp select{max-width:8.5em;font-size:12px}.cmhp .btn.small{padding:2px 6px}.cmhp .cmname{min-width:4.5em}.cmhp tr.cmres td{text-align:left;background:var(--soft)}.cmhp td small{display:block}
 .cmtabs{margin-bottom:var(--s2)}.cmrolls{list-style:none;margin:var(--s1) 0 0;padding:0;font-size:12.5px}.cmrolls li{padding:2px 0;border-top:var(--hair) solid var(--hl)}
 .wdice{vertical-align:middle;margin-right:2px}.wres{margin:var(--s1) 0 0;font-size:12.5px;font-weight:600}
+/* Party | Foes table: fixed layout, one line per token, nothing wraps mid-name */
+.cmhp{table-layout:fixed;width:100%;font-size:12px;border-collapse:collapse}.cmhp th,.cmhp td{padding:var(--s1) 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;vertical-align:middle}
+.cmhp .c-name{width:19%}.cmhp .c-hp{width:11%}.cmhp .c-tg{width:23%}.cmhp .c-wp{width:19%}.cmhp .c-nd{width:8%}.cmhp .c-dm{width:14%}.cmhp .c-rl{width:6%}
+.cmhp select{width:100%;max-width:100%;font-size:12px;text-overflow:ellipsis}.cmhp .inf{margin-left:2px}.cmhp .cmwcell select{width:calc(100% - 18px)}
+.cmhp .cmname{font-weight:600}.cmhp .cmneedc,.cmhp th:nth-child(5){text-align:center}.cmhp .cmac{width:100%;min-width:0;font-size:12px;text-align:center}
+.cmhp .cmhpbtn{font:inherit;font-weight:600;background:none;border:0;border-bottom:var(--hair) solid var(--line);padding:0;cursor:text;color:var(--fg)}.cmhp .cmhpin{width:100%;min-width:0;font-size:12px}
+.cmhp .cmdmg sup{font-size:9px;margin-left:1px;color:var(--muted)}.cmhp .cmdmg b{font-weight:600}
+.cmhp .cmrollc,.cmhp th:last-child{text-align:center;padding-left:0;padding-right:0}.cmhp .iconbtn{padding:2px 4px;min-width:0}.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.cmhp tr.dead td{color:var(--muted)}.cmhp tr.dead .cmname{text-decoration:line-through}.cmhp tr.dead .cmhpc i{font-style:italic;font-weight:600}
+.cmhp tr.cmres td{white-space:normal;overflow:visible;background:var(--soft)}
+.cmhp .c-name{width:17%}.cmhp .c-hp{width:11%}.cmhp .c-tg{width:20%}.cmhp .c-wp{width:21%}.cmhp .c-nd{width:9%}.cmhp .c-dm{width:14%}.cmhp .c-rl{width:8%}.cmhp th{font-size:10px;letter-spacing:0}

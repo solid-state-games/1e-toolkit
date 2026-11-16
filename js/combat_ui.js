@@ -6,7 +6,7 @@
    OBR calls used: scene.getMetadata/setMetadata/onMetadataChange/onReadyChange/isReady, scene.items.getItems/updateItems/onChange, party.getPlayers/onChange (SDK 3.1.0). */
 const CombatUI = (function () {
     const CS = CombatState, CA = CombatAttack;
-    let cur = { c: null, meta: {} }, items = [], players = [], gmRoot = null, setupOpen = null, notice = [], hpTab = 0, rolls = [], surOpen = false, splOpen = false;
+    let cur = { c: null, meta: {} }, items = [], players = [], gmRoot = null, setupOpen = null, notice = [], hpTab = 0, editHp = null, rolls = [], surOpen = false, splOpen = false;
     let draft = { n: ["Party", "Foes"], r: [undefined, undefined], et: [0, 0] };
     const own = function (i) { return (i.metadata || {})[SheetRules.OWNER_KEY]; };
     const byId = function (id) { return items.filter(function (x) { return x.id === id; })[0]; };
@@ -94,27 +94,33 @@ const CombatUI = (function () {
         const af = CA.facts(it), tf = CA.facts(tg[1]), wi = Math.min(st.wi || 0, Math.max(0, (af.weapons || []).length - 1));
         return { it: it, st: st, foes: foes, tg: tg, af: af, tf: tf, wi: wi, m: CA.rowModel(af, wi, tf, st.ac) };
     }
+    // One line per token (table-layout fixed): name (ellipsis, full name as title), HP as text that turns into an input on a click, target, weapon (PCs), needs, damage, Roll (icon).
+    // A result is a full-width sub-row. A dead row is one greyed line with no controls.
     function rowHtml(c, k, i) {
-        const r = rowModelFor(c, k, i), it = r.it, hp = hpOf(it), dead = isDown(it), res = (c.rr || {})[k];
-        let h = '<tr class="cmr' + (dead ? " dead" : "") + '"><td class="cmname"><b>' + esc(it.name || "Unnamed token") + "</b></td>";
-        h += '<td class="cmhpc">' + (hp ? (dead ? "<i>dead</i> " : "<b>" + hp[0] + "</b>/" + hp[1] + " ") : '<span class="muted">none</span> ') + '<input class="cmhpin" data-hp="' + esc(it.id) + '" placeholder="' + (hp ? "-6, +3, 9" : "max") + '" aria-label="Change hit points of ' + esc(it.name) + '"></td>';
-        h += '<td><select data-tg="' + esc(it.id) + '" aria-label="Target of ' + esc(it.name) + '"><option value="">--</option>' + r.foes.map(function (x) { return opt(x[1].id, x[1].name, r.st.tg); }).join("") + "</select></td>";
-        if (!r.tg) h += '<td class="muted">-</td><td class="muted">-</td><td></td></tr>';
+        const r = rowModelFor(c, k, i), it = r.it, hp = hpOf(it), dead = isDown(it), res = (c.rr || {})[k], nm = it.name || "Unnamed token";
+        let h = '<tr class="cmr' + (dead ? " dead" : "") + '"><td class="cmname" title="' + esc(nm) + '">' + esc(nm) + "</td>";
+        const hpTxt = hp ? hp[0] + "/" + hp[1] : "--";
+        h += '<td class="cmhpc">' + (editHp === it.id && !dead ? '<input class="cmhpin" data-hp="' + esc(it.id) + '" value="" placeholder="' + esc(hpTxt) + '" aria-label="Change hit points of ' + esc(nm) + ' (now ' + esc(hpTxt) + '): -6, +3 or a number">' :
+            dead ? "<i>dead</i>" : '<button type="button" class="cmhpbtn" data-hpedit="' + esc(it.id) + '" title="Click to change hit points: -6, +3 or a number" aria-label="Hit points of ' + esc(nm) + ': ' + esc(hpTxt) + '. Click to change">' + esc(hpTxt) + "</button>") + "</td>";
+        if (dead) { h += '<td></td><td></td><td></td><td></td><td></td></tr>'; return h; }
+        h += '<td><select data-tg="' + esc(it.id) + '" aria-label="Target of ' + esc(nm) + '"><option value="">--</option>' + r.foes.map(function (x) { return opt(x[1].id, x[1].name, r.st.tg); }).join("") + "</select></td>";
+        if (!r.tg) h += "<td></td><td></td><td></td><td></td></tr>";
         else {
-            const m = r.m, af = r.af;
-            h += "<td>" + (af.kind === "pc" ? '<select data-wi="' + esc(it.id) + '" aria-label="Weapon of ' + esc(it.name) + '">' + (af.weapons.length ? af.weapons.map(function (w, j) { return opt(j, w.name, r.wi); }).join("") : opt(0, "no weapon", 0)) + "</select> " : "") +
-                (m.need === null ? 'AC <input type="number" class="cmnum" data-acov="' + esc(it.id) + '" value="" aria-label="Target armour class"> needs ?' : "needs <b>" + m.need + "</b>") + (CA.isMissile(af, r.wi) ? inf(CA.MISSILE_NOTE) : "") + "</td>";
-            h += "<td>" + esc(m.dice.map(function (d) { return CA.diceText(d); }).join(" / ") || "?") + (af.kind === "pc" ? (m.size === "L" ? " vs L" : " vs S-M") : "") + '<br><small class="muted">' + esc(m.attacks) + "</small></td>";
-            h += '<td><button type="button" class="btn small" data-act="roll" data-k="' + k + '" aria-label="Roll ' + esc(it.name) + '">' + ic("dice") + "Roll</button></td></tr>";
+            const m = r.m, af = r.af, many = m.dice.length === 1 && m.count > 1 ? " x" + m.count : "";
+            h += '<td class="cmwcell">' + (af.kind === "pc" ? '<select data-wi="' + esc(it.id) + '" aria-label="Weapon of ' + esc(nm) + '">' + (af.weapons.length ? af.weapons.map(function (w, j) { return opt(j, w.name, r.wi); }).join("") : opt(0, "no weapon", 0)) + "</select>" + (CA.isMissile(af, r.wi) ? inf(CA.MISSILE_NOTE) : "") : "") + "</td>";
+            h += '<td class="cmneedc">' + (m.need === null ? '<input type="number" class="cmac" data-acov="' + esc(it.id) + '" placeholder="AC" aria-label="Target armour class">' : "<b>" + m.need + "</b>") + "</td>";
+            const dt = m.dice.map(function (d) { return CA.diceText(d); }).join("/") || "?", note = m.attacks + (af.kind === "pc" ? ", " + (m.size === "L" ? "against large" : "against small-medium") : "");
+            h += '<td class="cmdmg" title="' + esc(dt + many + " (" + note + ")") + '">' + esc(dt) + (many ? "<b>" + many + "</b>" : "") + (af.kind === "pc" ? "<sup>" + (m.size === "L" ? "L" : "S-M") + "</sup>" : "") + "</td>";
+            h += '<td class="cmrollc"><button type="button" class="btn small iconbtn" data-act="roll" data-k="' + k + '" title="Roll" aria-label="Roll ' + esc(nm) + '">' + ic("dice") + "</button></td></tr>";
         }
-        if (res) h += '<tr class="cmres"><td colspan="6">' + res.ls.map(function (x) { return "<div>" + esc(x) + "</div>"; }).join("") + (res.dm > 0 && !res.ap ? '<button type="button" class="btn small" data-act="apply" data-k="' + k + '">Apply ' + res.dm + " damage" + (byId(c.ro[res.tk]) ? " to " + esc(byId(c.ro[res.tk]).name) : "") + "</button>" : res.ap ? '<span class="muted">applied</span>' : "") + "</td></tr>";
+        if (res) { const ap = res.dm > 0 && !res.ap, tn = byId(c.ro[res.tk]); h += '<tr class="cmres"><td colspan="7">' + esc(res.ls.join("  |  ")) + (ap ? ' &middot; <button type="button" class="btn small" data-act="apply" data-k="' + k + '" title="Apply ' + res.dm + " damage" + (tn ? " to " + esc(tn.name) : "") + '" aria-label="Apply ' + res.dm + " damage" + (tn ? " to " + esc(tn.name) : "") + '">Apply</button>' : res.ap ? ' &middot; <span class="muted">applied</span>' : "") + "</td></tr>"; }
         return h;
     }
     function tableHtml(c) {
         const s = c.sd[hpTab];
         let h = '<h4>Hit points, targets and rolls' + inf("Type -6 or +3 to change hit points, or a number to set. PCs: the sheet's hit points. 0 or less is dead (PHB p.105).") + '</h4><div class="seg cmtabs" role="tablist">' + c.sd.map(function (x, i) { return '<button type="button" role="tab" data-hptab="' + i + '" class="sb' + (i === hpTab ? " on" : "") + '" aria-pressed="' + (i === hpTab) + '">' + esc(x.n) + " <small>" + x.m.length + "</small></button>"; }).join("") + "</div>";
         if (!s.m.length) return h + '<p class="muted">Nobody on this side.</p>';
-        h += '<div class="scroll"><table class="grid cmhp"><tr><th>Token</th><th>HP</th><th>Target</th><th>To hit</th><th>Damage</th><th></th></tr>' + s.m.map(function (k) { return rowHtml(c, k, hpTab); }).join("") + "</table></div>";
+        h += '<table class="grid cmhp"><colgroup><col class="c-name"><col class="c-hp"><col class="c-tg"><col class="c-wp"><col class="c-nd"><col class="c-dm"><col class="c-rl"></colgroup><tr><th>Token</th><th>HP</th><th>Target</th><th>Weapon</th><th>Hit on</th><th>Damage</th><th><span class="vh">Roll</span></th></tr>' + s.m.map(function (k) { return rowHtml(c, k, hpTab); }).join("") + "</table>";
         CS.casualties(c, downIdx).forEach(function (x) { if (x.down) h += '<p class="cmnote">' + esc(x.text) + (x.morale ? ". " + esc(x.morale) : "") + "</p>"; });
         return h;
     }
@@ -160,6 +166,8 @@ const CombatUI = (function () {
         await setHp(t, CA.applyDamage(h, rr.dm)); await mutate(function (c) { c.rr[k].ap = 1; });
     }
     async function onClick(e) {
+        const eh = e.target.closest("[data-hpedit]");
+        if (eh) { editHp = eh.dataset.hpedit; render(); const inp = gmRoot.querySelector(".cmhpin"); if (inp) inp.focus(); return; }
         const b = e.target.closest("[data-act],[data-hptab]"); if (!b) return;
         const a = b.dataset.act, c = cur.c, k = Number(b.dataset.k), i = Number(b.dataset.i);
         if (a === "cog") { setupOpen = !showSetup(); render(); }
@@ -209,7 +217,7 @@ const CombatUI = (function () {
         else if (t.dataset.tg !== undefined) setCs(t.dataset.tg, { tg: t.value || null });
         else if (t.dataset.wi !== undefined) setCs(t.dataset.wi, { wi: Number(t.value) });
         else if (t.dataset.acov !== undefined) setCs(t.dataset.acov, { ac: t.value === "" ? null : Number(t.value) });
-        else if (t.dataset.hp) { const it = byId(t.dataset.hp), h = CS.hpEdit(hpOf(it), t.value); if (h) setHp(it, h); else { say("Type -6, +3 or a number.", "WARNING"); t.value = ""; } }
+        else if (t.dataset.hp) { const it = byId(t.dataset.hp), h = CS.hpEdit(hpOf(it), t.value); editHp = null; if (h) setHp(it, h); else { say("Type -6, +3 or a number.", "WARNING"); render(); } }
     }
     // the players' sheet rolls: each player's own metadata `.../rolls` (last 10 each), newest 10 overall
     async function scanRolls() {
@@ -221,13 +229,17 @@ const CombatUI = (function () {
     }
     async function loadItems() {
         try { players = (await TK.OBR.party.getPlayers()).filter(function (p) { return p.role === "PLAYER"; }); } catch (e) { players = []; }
-        items = (await TK.OBR.scene.items.getItems(function (i) { return i.layer === "CHARACTER"; })).sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+        // the dev room's "(your token)" style suffixes never show in combat labels
+        items = (await TK.OBR.scene.items.getItems(function (i) { return i.layer === "CHARACTER"; })).map(function (i) { i.name = String(i.name || "").replace(/\s*\((your token|other player|GM token)\)\s*$/i, ""); return i; }).sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
         render();
     }
 
     /* ----- entry points ----- */
     function initGm(el) {
         gmRoot = el; el.addEventListener("click", onClick); el.addEventListener("change", onChange);
+        // the hit-point box: Enter or leaving it applies (the change event), Esc cancels, leaving it empty puts the number back
+        el.addEventListener("keydown", function (e) { if (e.target.classList && e.target.classList.contains("cmhpin")) { if (e.key === "Escape") { e.preventDefault(); editHp = null; render(); } else if (e.key === "Enter") e.target.blur(); } });
+        el.addEventListener("focusout", function (e) { if (e.target.classList && e.target.classList.contains("cmhpin") && editHp) setTimeout(function () { if (editHp && !(document.activeElement && document.activeElement.classList.contains("cmhpin"))) { editHp = null; render(); } }, 0); });
         el.addEventListener("toggle", function (e) { if (e.target.id === "cm-sur") surOpen = e.target.open; if (e.target.id === "cm-spl") splOpen = e.target.open; if (e.target.id === "cm-rolls") rollsOpen = e.target.open; }, true);
     }
     // called by the hub (GM only) once the scene is ready: read, then follow changes
