@@ -323,3 +323,5 @@ button.gear:hover,.cmcard .ibtn:hover{background:var(--hl)}
 .cmhp tr.dead td{color:var(--muted)}.cmhp tr.dead .cmname{text-decoration:line-through}.cmhp tr.dead .cmhpc i{font-style:italic;font-weight:600}
 .cmhp tr.cmres td{white-space:normal;overflow:visible;background:var(--soft)}
 .cmhp .c-name{width:17%}.cmhp .c-hp{width:11%}.cmhp .c-tg{width:20%}.cmhp .c-wp{width:21%}.cmhp .c-nd{width:9%}.cmhp .c-dm{width:14%}.cmhp .c-rl{width:8%}.cmhp th{font-size:10px;letter-spacing:0}
+.cmhp .c-name{width:16%}.cmhp .c-hp{width:11%}.cmhp .c-tg{width:18%}.cmhp .c-wp{width:22%}.cmhp .c-nd{width:11%}.cmhp .c-dm{width:14%}.cmhp .c-rl{width:8%}.cmhp th{padding-left:2px;padding-right:2px;text-overflow:clip}
+.cmhp .c-tg{width:17%}.cmhp .c-dm{width:15%}
