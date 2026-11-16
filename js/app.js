@@ -30,9 +30,10 @@ window.startToolkit = async function () {
     OBR.onReady(async function () {
         try {
             TK.role = await OBR.player.getRole(); TK.me = await OBR.player.getId(); TK.name = await OBR.player.getName();
-            document.body.classList.add(TK.role === "GM" ? "role-gm" : "role-player", TK.view === "sheet" ? "view-sheet" : "view-hub");
+            document.body.classList.add(TK.role === "GM" ? "role-gm" : "role-player", TK.view === "sheet" ? "view-sheet" : TK.view === "foe" ? "view-foe" : "view-hub");
             if (TK.dev) document.body.classList.add("dev");
             if (TK.view === "sheet") await SheetUI.start(q.get("item"));
+            else if (TK.view === "foe") await FoeUI.start(q.get("item"));
             else await Hub.start();
         } catch (e) { console.error(e); $("app").innerHTML = '<div class="notice"><h2>Something went wrong</h2><p>' + esc(e.message) + "</p></div>"; }
     });
@@ -41,7 +42,7 @@ window.startToolkit = async function () {
 /* ================= the action popover ================= */
 const Hub = (function () {
     let tab = "sheets", players = [], items = [];
-    const GM_TABS = [["enc", "Encounters"], ["tre", "Treasure"], ["com", "Combat"]];
+    const GM_TABS = [["enc", "Encounters"], ["tre", "Treasure"], ["com", "Combat"], ["mon", "Monsters"]];
 
     async function start() {
         // Players can join after the panel opens (e.g. a player in another tab): keep the Assign list live.
@@ -61,15 +62,15 @@ const Hub = (function () {
     }
     function shell() {
         const tabs = [["sheets", "Characters"]].concat(TK.role === "GM" ? GM_TABS : []).concat([["guide", "Guide"]]);
-        let h = '<header class="hubhead"><h1>1e Character Sheet</h1><span><span class="rolebadge">' + (TK.role === "GM" ? "GM" : "Player") + '</span>' + tkGear("hub") + '</span></header>';
+        let h = '<header class="hubhead"><h1>' + (TK.role === "GM" ? "1E TOOLKIT" : "1e Character Sheet") + '</h1><span class="hubside"><span class="rolebadge">' + (TK.role === "GM" ? "GM" : "Player") + '</span>' + tkGear("hub") + '</span></header>';
         h += '<nav class="tabs" role="tablist">' + tabs.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '">' + (t[0] === "com" ? '<i class="ic ic-sword" aria-hidden="true"></i>' : "") + t[1] + "</button>"; }).join("") + "</nav>";
         h += '<section id="sheets" class="pane"></section>';
-        if (TK.role === "GM") h += '<section id="enc" class="pane"></section><section id="tre" class="pane"></section><section id="com" class="pane"></section>';
+        if (TK.role === "GM") h += '<section id="enc" class="pane"></section><section id="tre" class="pane"></section><section id="com" class="pane"></section><section id="mon" class="pane"></section>';
         h += '<section id="guide" class="pane"><p>The setup guide explains installing the extension, adding it to a room, linking a token to a sheet and moving a character between rooms.</p><p><a class="btn" href="guide.html" target="_blank" rel="noopener">Open the setup guide</a></p></section>';
         h += '<footer class="credit">' + esc(CREDIT) + "</footer>";
         $("app").innerHTML = h;
         document.querySelector(".tabs").addEventListener("click", function (e) { const b = e.target.closest("[data-tab]"); if (b) show(b.dataset.tab); });
-        if (TK.role === "GM") { Enc.init($("enc")); Tre.init($("tre")); Com.init($("com")); CombatUI.initGm($("c-run")); }
+        if (TK.role === "GM") { Enc.init($("enc")); Tre.init($("tre")); Com.init($("com")); CombatUI.initGm($("c-run")); $("mon").onclick = onMonClick; }
     }
     // The popover is as tall as its content (200 px up to a cap, then it scrolls). Cap = 760 px and never past the bottom of the screen:
     // the viewport height less the popover's top offset (64) and a margin (40). OBR.action.setHeight, OBR.viewport.getHeight; width stays as the manifest says.
@@ -96,8 +97,17 @@ const Hub = (function () {
     function mine(it) { const o = (it.metadata || {})[SheetRules.OWNER_KEY]; return TK.role === "GM" || (o ? o === TK.me : it.createdUserId === TK.me); }  // private sheets
     async function refreshItems() {
         items = (await TK.OBR.scene.items.getItems(function (i) { return i.layer === "CHARACTER"; })).filter(mine);
-        renderSheets();
+        renderSheets(); renderMonsters();
     }
+    // Monsters tab (GM): every Character-layer token with no sheet, one line each; Open shows its foe mini sheet
+    function renderMonsters() {
+        const el = $("mon"); if (!el) return;
+        const foes = items.filter(function (it) { return !(it.metadata || {})[SheetRules.KEY]; });
+        el.innerHTML = '<p class="hint">Foe mini sheets for tokens with no character sheet. Also on the right-click menu of a token: Foe sheet.</p>' + (foes.length ? '<ul class="charlist">' + foes.map(function (it) {
+            const cs = (it.metadata || {})[CombatState.CS] || {}, mon = CombatState.monsterOf(it.name), fo = cs.fo || {}, h = cs.h;
+            return '<li data-id="' + esc(it.id) + '"><div class="cname"><b>' + esc(it.name || "Unnamed token") + '</b><span class="csub">' + (mon ? "AC " + esc(fo.ac || mon.d.ac) + ", HD " + esc(fo.hd || mon.d.hitDice) : '<span class="muted">no Monster Manual match</span>') + (h ? ", HP " + h[0] + "/" + h[1] : "") + '</span></div><div class="cbtns"><button type="button" class="btn" data-act="foe">Open</button></div></li>'; }).join("") + "</ul>" : '<p class="muted">No monster tokens on this scene.</p>');
+    }
+    function onMonClick(e) { const b = e.target.closest('[data-act="foe"]'); if (b) TK.OBR.modal.open({ id: SheetRules.NS + "/foe", url: pageUrl("view=foe&item=" + encodeURIComponent(b.closest("li").dataset.id)), width: 560, height: 720 }); }
     function ownerName(it) {
         const id = (it.metadata || {})[SheetRules.OWNER_KEY];
         if (id === TK.me) return "you";
@@ -106,9 +116,10 @@ const Hub = (function () {
     }
     function renderSheets() {
         const el = $("sheets"); if (!el) return;
-        let h = "";
-        if (!items.length) h += '<p class="muted">' + (TK.role === "GM" ? "No character tokens on this scene yet. Put a token on the Character layer, then come back." : "No tokens for you yet. Place a token on the Character layer, or ask the GM to assign one to you.") + "</p>";
-        h += '<ul class="charlist">' + items.map(function (it) {
+        const withSheet = items.filter(function (it) { return !!(it.metadata || {})[SheetRules.KEY]; }), bare = items.filter(function (it) { return !(it.metadata || {})[SheetRules.KEY]; });
+        let h = '<div class="addrow"><select data-act="newchar" aria-label="New Character"><option value="">New Character...</option>' + bare.map(function (it) { return '<option value="' + esc(it.id) + '">' + esc(it.name || "Unnamed token") + "</option>"; }).join("") + "</select>" + (bare.length ? "" : '<span class="muted small">No tokens waiting' + (TK.role === "GM" ? ": put one on the Character layer." : ".") + "</span>") + "</div>";
+        if (!withSheet.length) h += '<p class="muted">No characters yet. Pick a token in New Character to start its sheet' + (TK.role === "GM" ? "." : ", or ask the GM to assign one to you.") + "</p>";
+        h += '<ul class="charlist">' + withSheet.map(function (it) {
             const sh = (it.metadata || {})[SheetRules.KEY], has = !!sh;
             let line = '<li data-id="' + esc(it.id) + '"><div class="cname"><b>' + esc(it.name || "Unnamed token") + "</b>";
             if (has) line += '<span class="csub">' + esc(sh.nm || "") + " " + esc((sh.cl || []).join("/")) + " " + esc((sh.lv || []).join("/")) + "</span>"; else line += '<span class="csub muted">no sheet yet</span>';
@@ -152,6 +163,8 @@ const Hub = (function () {
         } catch (err) { say(err.message, "ERROR"); }
     }
     async function onSheetsChange(e) {
+        const nc = e.target.closest('select[data-act="newchar"]');
+        if (nc) { if (nc.value) { TK.OBR.modal.open({ id: SheetRules.NS + "/sheet", url: pageUrl("view=sheet&item=" + encodeURIComponent(nc.value)), width: 980, height: 940 }); nc.value = ""; } return; }
         const s = e.target.closest('select[data-act="assign"]'); if (!s || !s.value) return;
         const id = s.closest("li").dataset.id, pid = s.value === "-" ? null : s.value;
         let handed = false;
@@ -184,7 +197,7 @@ const Enc = (function () {
         root = el;
         el.innerHTML = '<div class="egroup"><span class="elab">Mode</span><div class="emodes" id="e-modes"><div class="mgrp"><span class="mcap">Climate</span><select id="e-climate" aria-label="Climate">' + [""].concat(LAND_MODES).map(function (m) { return '<option value="' + m + '">' + esc(modeLabel(m)) + "</option>"; }).join("") + '<option value="-" disabled>off: a mode below is used</option></select></div>' + MODE_GROUPS.map(function (g) {
                 return '<div class="mgrp"><span class="mcap">' + g[0] + "</span><div class=\"seg wrap\">" + g[1].map(function (m) { return '<button type="button" data-mode="' + m + '"' + pressed("sb", m === st.mode) + ">" + esc(modeLabel(m)) + "</button>"; }).join("") + "</div></div>"; }).join("") + "</div></div>" +
-            '<div class="egroup"><span class="elab">Terrain</span><div class="hexwrap"><div class="hexgrid" id="e-hex"></div><div class="tname" id="e-tname" aria-live="polite"></div></div></div>' +
+            '<div class="egroup"><span class="elab">Terrain</span><div class="seg wrap" id="e-hex"></div></div>' +
             '<div class="egroup"><span class="elab">Density</span><div class="seg" id="e-dens">' + DENS.map(function (d) { return '<button type="button" data-dens="' + d[0] + '" title="' + d[2] + '"' + pressed("sb", d[0] === st.density) + ">" + d[1] + " <small>" + d[2] + "</small></button>"; }).join("") + "</div></div>" +
             '<div class="ctl"><label class="chk"><input type="checkbox" id="e-air"> Airborne</label><label class="chk"><input type="checkbox" id="e-psi"> Psionic</label><label class="chk"><input type="checkbox" id="e-moon"> Bright moon</label></div>' +
             '<details class="more"><summary>Party (for reactions and evasion)</summary><div class="ctl">' +
@@ -202,13 +215,11 @@ const Enc = (function () {
         el.addEventListener("change", function (e) { if (e.target.id === "e-climate") { st.mode = e.target.value; pick("data-mode", "\u0000"); fillTerrains(); } });
     }
     const terrainLabel = function (t) { return cap(t.replace(/([A-Z])/g, " $1").toLowerCase()); };
-    // honeycomb: rows of four, every second row shifted half a hex
+    // terrain buttons, wrapping into rows like the mode buttons
     function fillTerrains() {
         const ts = st.mode ? modeTerrains(st.mode) : TERRAINS;
         if (ts.indexOf(st.terrain) < 0) st.terrain = ts[0];
-        let rows = "";
-        for (let i = 0; i < ts.length; i += 4) rows += '<div class="hexrow' + (i % 8 ? " shift" : "") + '">' + ts.slice(i, i + 4).map(function (t) { return '<button type="button" class="hex' + (t === st.terrain ? " on" : "") + '" data-terrain="' + t + '" aria-pressed="' + (t === st.terrain) + '" aria-label="' + esc(terrainLabel(t)) + '" title="' + esc(terrainLabel(t)) + '"><span><i class="ic ic-t-' + (HEX_ICON[t] || "mountains") + '" aria-hidden="true"></i></span></button>'; }).join("") + "</div>";
-        $("e-hex").innerHTML = rows; $("e-tname").textContent = terrainLabel(st.terrain);
+        $("e-hex").innerHTML = ts.map(function (t) { return '<button type="button" data-terrain="' + t + '"' + pressed("sb", t === st.terrain) + ' title="Roll a day in ' + esc(terrainLabel(t)) + '">' + esc(terrainLabel(t)) + "</button>"; }).join("");
         $("e-climate").value = LAND_MODES.indexOf(st.mode) >= 0 || !st.mode ? st.mode : "-";
         root.querySelectorAll("[data-dens]").forEach(function (b) { b.disabled = !!st.mode && !LAND_MODES.includes(st.mode); });
     }
@@ -229,7 +240,7 @@ const Enc = (function () {
     }
     function cardAction(ev) {
         const t = ev.target.closest && ev.target.closest("[data-terrain],[data-mode],[data-dens],[data-goto]");
-        if (t && t.dataset.terrain) { st.terrain = t.dataset.terrain; pick("data-terrain", st.terrain); $("e-tname").textContent = terrainLabel(st.terrain); rollDayNow(); return; }
+        if (t && t.dataset.terrain) { st.terrain = t.dataset.terrain; pick("data-terrain", st.terrain); rollDayNow(); return; }
         if (t && t.dataset.mode !== undefined) { st.mode = t.dataset.mode; pick("data-mode", st.mode); fillTerrains(); return; }
         if (t && t.dataset.dens) { st.density = t.dataset.dens; pick("data-dens", st.density); return; }
         if (t && t.dataset.goto) { const card = document.getElementById(t.dataset.goto); if (card) card.scrollIntoView({ block: "start", behavior: "smooth" }); return; }

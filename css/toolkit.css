@@ -30,7 +30,8 @@ input.tiny{width:4em;text-align:center}input[type=number]{width:5em}
 body.view-hub #app{padding:.6em .8em;min-height:0}
 .hubhead{display:flex;align-items:center;justify-content:space-between;border-bottom:3px double var(--line);padding-bottom:.2em}
 .hubhead h1{font-size:20px;margin:0}
-.rolebadge{font-size:11px;border:1px solid var(--line);padding:0 .5em;text-transform:uppercase;letter-spacing:.08em}
+.hubside{display:flex;align-items:center;gap:.4em}
+.rolebadge{line-height:1.5;display:inline-flex;align-items:center;font-size:11px;border:1px solid var(--line);padding:0 .5em;text-transform:uppercase;letter-spacing:.08em}
 .tabs{display:flex;gap:0;margin:.5em 0 0;flex-wrap:wrap;border-bottom:1px solid var(--line)}
 .tabs button,.subtabs button{font-family:var(--sans);font-weight:500;font-size:12.5px;text-transform:uppercase;letter-spacing:.06em;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-bottom:0;margin-right:-1px;padding:.3em .8em;cursor:pointer;border-radius:0}
 .tabs button.on,.subtabs button.on{background:var(--inv-bg);color:var(--inv-fg)}
@@ -186,10 +187,10 @@ ul.spchips{list-style:none;display:flex;flex-wrap:wrap;gap:.3em;margin:0;padding
 .shead.dense-head h1{font-size:20px}
 /* settings dialog */
 .gear{padding:.2em .45em;display:inline-flex;align-items:center}
-.setov{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:50;display:flex;align-items:flex-start;justify-content:flex-end;padding:3em 1em}
+.setov{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:3em 1em}
 .setpanel{background:var(--bg);color:var(--fg);border:2px solid var(--line);min-width:16em;max-width:92vw;padding:.4em .8em .8em;box-shadow:4px 4px 0 var(--line)}
 .sethead{display:flex;justify-content:space-between;align-items:center;margin-bottom:.3em}
-.setrow{display:flex;justify-content:space-between;align-items:center;gap:.8em;margin:.3em 0;font-size:13.5px}
+.setrow{display:grid;grid-template-columns:9em auto;justify-content:start;align-items:center;gap:.8em;margin:.3em 0;font-size:13.5px}
 .setrow select{font-size:13px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
 .setacts{display:flex;flex-direction:column;gap:.25em;margin-top:.5em;border-top:1px solid var(--line);padding-top:.5em}
 .dense .sident{flex-wrap:nowrap;border-top:0}.dense .sname{display:block}.dense .sname span{display:block;line-height:1.2}
@@ -261,7 +262,7 @@ label.chk input{margin:.2em 0 0}
 .seg button:disabled{opacity:.4;cursor:default}
 .emodes{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s4)}
 .mcap{display:block;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:2px}
-.hexwrap{display:flex;align-items:center;gap:var(--s4);flex-wrap:wrap}
+.xhexwrap{display:flex;align-items:center;gap:var(--s4);flex-wrap:wrap}
 .hexgrid{padding:var(--s1) 0}
 .hexrow{display:flex}
 .hexrow+.hexrow{margin-top:-11px}
@@ -325,3 +326,11 @@ button.gear:hover,.cmcard .ibtn:hover{background:var(--hl)}
 .cmhp .c-name{width:17%}.cmhp .c-hp{width:11%}.cmhp .c-tg{width:20%}.cmhp .c-wp{width:21%}.cmhp .c-nd{width:9%}.cmhp .c-dm{width:14%}.cmhp .c-rl{width:8%}.cmhp th{font-size:10px;letter-spacing:0}
 .cmhp .c-name{width:16%}.cmhp .c-hp{width:11%}.cmhp .c-tg{width:18%}.cmhp .c-wp{width:22%}.cmhp .c-nd{width:11%}.cmhp .c-dm{width:14%}.cmhp .c-rl{width:8%}.cmhp th{padding-left:2px;padding-right:2px;text-overflow:clip}
 .cmhp .c-tg{width:17%}.cmhp .c-dm{width:15%}
+
+/* ---------- foe mini sheet and End combat ---------- */
+body.view-foe #app{padding:.6em}
+.foe{max-width:520px;margin:0 auto}.foe h1{font-size:24px;margin:.2em 0}.foe .sub{margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.foegrid{display:grid;grid-template-columns:repeat(3,1fr);gap:.3em .8em;margin:.5em 0}.foegrid label{display:flex;flex-direction:column;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;min-width:0}.foegrid label.wide{grid-column:1/-1}
+.foegrid input,.foe textarea{font:inherit;font-size:13px;width:100%;box-sizing:border-box;border:1px solid var(--line);background:var(--bg);color:var(--fg)}.foe textarea{min-height:7em}
+.foehp{display:flex;align-items:center;gap:.4em;margin:.5em 0}.foehp input{width:4.5em;font-size:15px}
+.cmend{margin-top:1em;text-align:center}

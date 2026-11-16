@@ -11,6 +11,11 @@ const here = p => new URL(p, location.href).href;
 OBR.onReady(() => {
     installCombatMenus(OBR, NS, here).catch(e => console.warn("combat menus", e)); // right-click sides and the Fight tool
     installCombatHp(OBR, NS, buildLabel).catch(e => console.warn("combat hp", e)); // GM only: monster hit points, a number on the token (this client only)
+    OBR.contextMenu.create({   // GM only: the foe mini sheet (stats from the Monster Manual by token name, hit points, notes)
+        id: NS + "/foe-sheet",
+        icons: [{ icon: here("vendor/icons/sword.svg"), label: "Foe sheet", filter: { min: 1, max: 1, every: [{ key: "layer", value: "CHARACTER" }], roles: ["GM"] } }],
+        onClick(context) { OBR.modal.open({ id: NS + "/foe", url: here("index.html?view=foe&item=" + encodeURIComponent(context.items[0].id)), width: 560, height: 720 }); }
+    });
     OBR.contextMenu.create({
         id: NS + "/open-sheet",
         icons: [{ icon: here("icon.svg"), label: "Open 1e sheet", filter: { min: 1, max: 1, every: [{ key: "layer", value: "CHARACTER" }] } }],

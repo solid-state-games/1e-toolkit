@@ -142,9 +142,9 @@ const CombatUI = (function () {
     function runHtml() {
         const c = cur.c;
         let h = '<div class="cmhead"><h3>Combat</h3><b class="cmrd">Round ' + c.rd + ' &middot; Turn ' + c.tn + ' <span class="muted">(round ' + CS.roundInTurn(c) + ' of 10)</span></b><span class="sp"></span>' +
-            '<button type="button" class="x ibtn" data-act="cog" title="Set-up: sides and surprise ranges" aria-label="Set-up">' + ic("gear") + '</button><button type="button" class="btn ghost small" data-act="end">' + ic("flag") + "End combat</button></div>";
+            '<button type="button" class="x ibtn" data-act="cog" title="Set-up: sides and surprise ranges" aria-label="Set-up">' + ic("gear") + '</button></div>';
         if (showSetup()) h += setupHtml();
-        return h + roundHtml(c) + surpriseHtml(c) + tableHtml(c) + hitsHtml(c) + spellsHtml(c) + rollsHtml();
+        return h + roundHtml(c) + surpriseHtml(c) + tableHtml(c) + hitsHtml(c) + spellsHtml(c) + rollsHtml() + '<div class="cmend"><button type="button" class="btn ghost small" data-act="end">' + ic("flag") + "End combat</button></div>";
     }
     const showSetup = function () { return setupOpen === null ? !cur.c : setupOpen; };
     function render() {
